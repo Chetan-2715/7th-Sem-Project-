@@ -1,0 +1,43 @@
+# Ignore all documentation, reports, and diagrams
+*.docx
+*.pptx
+*.xlsx
+*.pdf
+diagrams/
+Project_Synopsis_Review_1_Official.md
+TEAM_GUIDE_AND_REPORT_PROMPT.md
+Architecture.md
+Design.md
+Memory.md
+PRD.md
+Phases.md
+Rules.md
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch & ML models / checkpoints
+*.pt
+*.bin
+*.safetensors
+ml_pipeline/checkpoints/
+
+# Virtual Environments & Dependencies
+venv/
+env/
+.venv
+node_modules/
+
+# Temporary & Lock files
+~$*.docx
+~*.tmp
+*.tmp
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env
