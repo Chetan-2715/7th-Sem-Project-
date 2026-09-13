@@ -1,4 +1,4 @@
-# Ignore all documentation, reports, and diagrams
+# Ignore binary docx, reports, and diagrams
 *.docx
 *.pptx
 *.xlsx
@@ -6,12 +6,7 @@
 diagrams/
 Project_Synopsis_Review_1_Official.md
 TEAM_GUIDE_AND_REPORT_PROMPT.md
-Architecture.md
-Design.md
 Memory.md
-PRD.md
-Phases.md
-Rules.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
