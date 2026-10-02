@@ -4,12 +4,25 @@ Welcome AI Assistant! This document contains the mandatory workflow guidelines a
 
 ---
 
-## 🔗 MANDATORY TEAM DEPENDENCY CHAIN
-Please understand your role in the development chain:
-- **Friend 3 (FastAPI Backend Lead)** STARTS FIRST by creating `backend/schemas.py` with Pydantic JSON models (`AuditRequest`, `AuditResult`, `Finding`, `GraphNode`, `GraphEdge`). This defines the data contracts that Friend 2 and Friend 4 depend on!
-- **Friend 2 (AST & Graph Lead)** builds `parser_engine/` ensuring graph output matches Friend 3's `GraphNode` & `GraphEdge` JSON schema.
-- **Friend 4 (React Frontend Lead)** builds `frontend/` UI components using Friend 3's schemas with mock data in parallel.
-- **Team Lead (AI Lead)** integrates CodeBERT + FAISS RAG + LangGraph into the backend once PRs are merged.
+## 🔗 TEAM BRANCHES & RESPONSIBILITY DIVISION
+
+### 🌿 Branch 1: `main` (Handled by Team Lead)
+- **Whole Backend:** FastAPI REST server, Pydantic schemas (`backend/schemas.py`), repository ingestion service, background task manager, API routes (`/api/audit`, `/api/health`, `/api/status`, `/api/report`).
+- **AI Models & Classifier:** Fine-tuned `microsoft/codebert-base` vulnerability classifier.
+- **Vector RAG Engine:** Local FAISS vector index + `sentence-transformers` (`all-MiniLM-L6-v2`) on CWE/OWASP corpus.
+- **Agent Workflow:** LangGraph StateGraph DAG agent (`Ingest` → `Scan` → `RAG` → `Synthesize` → `Report`).
+- **Baseline Frontend:** Simple test frontend to verify end-to-end audit execution.
+
+### 🌿 Branch 2: `feature/ast-graph-parser` (Handled by Friend 2)
+- **AST Slicer:** Function extraction with exact line numbers (`filename.py:L42-L58`) using Python `ast` and `tree-sitter`.
+- **Call-Graph Builder:** NetworkX directed dependency graph exporting `{ nodes: [...], edges: [...] }` JSON matching backend schemas.
+- **Unit Tests:** `pytest` test suite in `tests/test_parser.py`.
+
+### 🌿 Branch 3: `feature/frontend-dashboard` (Handled Collaboratively by Friends 3 & 4)
+- **Modern Dashboard:** React (Vite) + Tailwind CSS dark-mode dashboard (`#0D1117`).
+- **Visual Components:** Security Health Score dial (0–100), filterable findings table, side-by-side code diff viewer.
+- **Graph Visualizer:** Interactive React Flow call-graph component rendering backend-provided dependency graph.
+- **Polished UX:** Real-time audit progress bar, error handling, and citation modals.
 
 ---
 
@@ -31,24 +44,22 @@ Please understand your role in the development chain:
 ---
 
 ## 📌 STEP 2: Branch Creation & Git Isolation
-Do **NOT** commit directly to `main`. Create and checkout your role-specific feature branch:
-- **AST & Call-Graph Lead:** `git checkout -b feature/ast-graph-parser`
-- **FastAPI Backend Lead:** `git checkout -b feature/fastapi-backend`
-- **React Frontend Lead:** `git checkout -b feature/frontend-dashboard`
+Do **NOT** commit directly to `main` (unless you are the Team Lead). Create and checkout your assigned feature branch:
+- **Friend 2 (AST & Call-Graph Lead):** `git checkout -b feature/ast-graph-parser`
+- **Friends 3 & 4 (Collaborative Frontend Team):** `git checkout -b feature/frontend-dashboard`
 
 ---
 
 ## 📌 STEP 3: Phase Audit & Dependency Check
 1. Read `Phases.md` and `Memory.md` to verify active phase tasks.
-2. If you are Friend 3, ensure `backend/schemas.py` is defined first and pushed.
-3. If you are Friend 2 or 4, confirm you are building against the schema contracts defined in `backend/schemas.py`.
+2. Confirm you are building against the schema contracts defined in `backend/schemas.py`.
 
 ---
 
 ## 📌 STEP 4: Accurate Implementation & Rigorous Testing
-1. Write clean, modular, production-grade code in your designated folder (`backend/`, `frontend/`, or `parser_engine/`).
+1. Write clean, modular, production-grade code in your designated folder (`parser_engine/` or `frontend/`).
 2. Follow all guidelines in `Rules.md` (no hardcoded secrets, explicit exception handling, clean type hints).
-3. **MANDATORY TESTING:** Run local tests (`pytest`, Swagger UI `/docs`, `npm run dev`) to guarantee 100% correctness. Your code MUST NOT fail or break downstream work for other team members.
+3. **MANDATORY TESTING:** Run local tests (`pytest` for parser, `npm run dev` for frontend) to guarantee 100% correctness. Your code MUST NOT fail or break downstream work for other team members.
 
 ---
 

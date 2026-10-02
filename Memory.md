@@ -11,29 +11,25 @@
 ---
 
 ## Current Status
-- **Phase**: Phase 0 — Setup & Decisions (In Progress)
-- **Last worked on**: Architectural decisions finalized & conceptual explanation prepared for user.
-- **Next up**: Project skeleton setup (backend FastAPI + frontend React) and dataset initialization.
+- **Phase**: Phase 0 — Setup & Backend Foundation (In Progress)
+- **Active Task**: Team Lead building the Whole Backend (FastAPI, schemas, ingestion, routes), ML classifier, FAISS RAG, LangGraph agent, and baseline test UI on `main`.
+- **Parallel Branches**:
+  - Friend 2: `feature/ast-graph-parser` (AST parser & NetworkX graph)
+  - Friends 3 & 4: `feature/frontend-dashboard` (Collaborative React + Tailwind + React Flow dashboard)
+- **Next up**: Build `backend/schemas.py`, `backend/main.py`, `backend/services/ingestor.py`, and `backend/requirements.txt`.
 
 ## Key Decisions Log
-- **Target Languages / Scope**: Multi-tier repository scanning: Python (native AST), C/C++ (Devign classifier), JS/TS/React frontend (XSS, secret leaks), and `tree-sitter` for universal function chunking.
-- **Report & UI Features**: Pinpoint exact file paths & line numbers (`filename.py:L42-L58`), side-by-side replacement code diff view (vulnerable vs fixed snippet), grounded CWE/CVE citations, and interactive dependency risk graph.
-- **Trained Model**: `microsoft/codebert-base` (125M parameters) — lightweight, highly accurate for code vulnerability classification, and easily fits inside RTX 3050 VRAM (4GB-8GB).
-- **Classifier Granularity**: Function-level chunking (matches Devign dataset and RAG context window size).
-- **Agent Orchestration**: **LangGraph** chosen for explicit StateGraph pipeline control, predictable step execution, and real-time state streaming to UI.
-- **Code Knowledge Graph**: Lightweight AST import/call mapping into a NetworkX graph, returned to frontend for interactive visualization using React Flow.
-- **Vector DB & Embeddings (for RAG)**: **FAISS** (100% free, local Python package, file-based index) + `sentence-transformers` (`all-MiniLM-L6-v2`, ~80MB) for local, zero-cost semantic search over CVE/CWE/OWASP corpus.
-- **LLM Agent Provider**: Compatible with any OpenAI-like API (**OpenRouter**, **NVIDIA NIM**, **Groq**, **Gemini**) or **100% offline local Ollama** (e.g. `qwen2.5-coder:1.5b` or `llama3.2:3b` running on RTX 3050). An API key is NOT mandatory!
+- **Team Responsibilities & Branching**:
+  - **Lead (`main`)**: Whole backend API + repo ingestion + CodeBERT model + FAISS RAG + LangGraph agent + baseline frontend.
+  - **Friend 2 (`feature/ast-graph-parser`)**: AST parser (`ast_slicer.py`) + NetworkX call graph (`graph_builder.py`).
+  - **Friends 3 & 4 (`feature/frontend-dashboard`)**: Collaborative React + Vite + Tailwind CSS + React Flow dashboard.
+- **Backend & Schemas**: Central Pydantic schemas in `backend/schemas.py` are the single source of truth for both the parser output and the frontend UI.
+- **Trained Model**: `microsoft/codebert-base` (125M parameters) — fits RTX 3050 VRAM (4GB-8GB).
+- **Vector DB & Embeddings (for RAG)**: **FAISS** (local file-based index) + `sentence-transformers` (`all-MiniLM-L6-v2`) for local zero-cost search over CVE/CWE/OWASP corpus.
+- **Agent Framework**: **LangGraph** (StateGraph DAG) for deterministic multi-step audit flow.
 
 ## Progress Log
-### [2026-08-29] — Project kickoff & Architectural Alignment
-- Reviewed user's PRD.md, Architecture.md, Rules.md, Phases.md, Design.md, Memory.md.
-- Adopted project documentation format as canonical project spec.
-- Finalized key architectural decisions: Python target, function-level granularity, LangGraph agent framework, NetworkX call graph.
-
----
-
-## Known Issues / Open Questions
-- Dataset download: CodeXGLUE Devign C/C++ dataset needs to be downloaded/processed in `ml_pipeline`.
-- Seed CVE/CWE corpus format needs to be populated in `backend/app/rag/corpus/`.
-
+### [2026-10-02] — Team Division & Branch Strategy Refinement
+- Updated roadmap to 3-branch structure: `main` (Backend + AI + Lead), `feature/ast-graph-parser` (Friend 2), `feature/frontend-dashboard` (Friends 3 & 4 collaborative).
+- Synchronized `Phases.md`, `instructions.md`, and `Memory.md`.
+- Ready to begin Phase 0 Backend implementation on `main`.
