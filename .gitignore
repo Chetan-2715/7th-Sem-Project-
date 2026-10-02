@@ -44,3 +44,9 @@ Thumbs.db
 .vscode/
 .idea/
 .env
+
+# Local teammate prompt files
+2
+2.md
+3
+3.md
