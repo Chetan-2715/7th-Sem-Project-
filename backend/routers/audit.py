@@ -23,6 +23,7 @@ from backend.schemas import (
 )
 from backend.services.ingestor import CodebaseIngestor, IngestionError
 from backend.services.task_manager import audit_task_manager
+from agent.orchestrator import audit_orchestrator
 
 router = APIRouter(prefix="/api", tags=["Codebase Auditor"])
 ingestor = CodebaseIngestor()
@@ -209,31 +210,18 @@ async def execute_background_audit(task_id: str, repo_url: Optional[str] = None,
         files = ingestor.walk_codebase(temp_dir) if temp_dir else []
         total_files = len(files)
 
-        # Step 2: AST Parsing
-        audit_task_manager.update_progress(
-            task_id, 40, "Parsing AST & Call-Graph",
-            f"Extracted syntax trees across {total_files} files..."
-        )
-        await asyncio.sleep(1.0)
+        # Run the full LangGraph Agent Workflow
+        def progress_callback(pct, stage, msg):
+            audit_task_manager.update_progress(task_id, pct, stage, msg)
 
-        # Step 3: CodeBERT Classifier
-        audit_task_manager.update_progress(
-            task_id, 65, "Scanning with CodeBERT",
-            "Predicting vulnerability probabilities on function chunks..."
-        )
-        await asyncio.sleep(1.2)
-
-        # Step 4: FAISS Vector RAG & LangGraph Agent
-        audit_task_manager.update_progress(
-            task_id, 85, "FAISS RAG & LangGraph Synthesis",
-            "Retrieving CWE standards and synthesizing side-by-side replacement fixes..."
-        )
-        await asyncio.sleep(1.0)
-
-        # Build final report
-        result = generate_sample_report(repo_name=repo_name)
-        if total_files > 0:
-            result.total_files = total_files
+        if files:
+            result = audit_orchestrator.run(
+                repo_name=repo_name,
+                raw_files=files,
+                progress_callback=progress_callback
+            )
+        else:
+            result = generate_sample_report(repo_name=repo_name)
 
         audit_reports_db[result.audit_id] = result
         audit_task_manager.complete_task(task_id, result)

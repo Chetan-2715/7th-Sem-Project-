@@ -11,12 +11,12 @@
 ---
 
 ## Current Status
-- **Phase**: Phase 0 — Backend Foundation (COMPLETED) | Phase 2 & 3 — RAG & Agent Pipeline (Next)
-- **Active Task**: Whole FastAPI Backend built and verified (schemas, ingestor, task manager, audit routes, CORS, unit tests). Ready to build FAISS RAG and LangGraph agent.
+- **Phase**: Phase 0 (Backend), Phase 3 (RAG Engine), Phase 4 (LangGraph Agent), Phase 6 (Baseline UI) — ALL COMPLETED & TESTED!
+- **Active Task**: Vector RAG Engine & LangGraph Agent workflow fully built and integrated into FastAPI backend with baseline test UI. Next up: CodeBERT training/dataset pipeline (`ml_pipeline/`).
 - **Parallel Branches**:
   - Friend 2: `feature/ast-graph-parser` (AST parser & NetworkX graph)
   - Friends 3 & 4: `feature/frontend-dashboard` (Collaborative React + Tailwind + React Flow dashboard)
-- **Next up**: Build the Vector RAG Engine (`rag_engine/` with FAISS & CWE corpus) and LangGraph agent workflow (`agent/`).
+- **Next up**: Build `ml_pipeline/` for CodeXGLUE Devign dataset downloading, preprocessing, and fine-tuning CodeBERT (`microsoft/codebert-base`).
 
 ## Key Decisions Log
 - **Team Responsibilities & Branching**:
@@ -25,18 +25,22 @@
   - **Friends 3 & 4 (`feature/frontend-dashboard`)**: Collaborative React + Vite + Tailwind CSS + React Flow dashboard.
 - **Backend & Schemas**: Central Pydantic schemas in `backend/schemas.py` are the single source of truth for both the parser output and the frontend UI.
 - **Trained Model**: `microsoft/codebert-base` (125M parameters) — fits RTX 3050 VRAM (4GB-8GB).
-- **Vector DB & Embeddings (for RAG)**: **FAISS** (local file-based index) + `sentence-transformers` (`all-MiniLM-L6-v2`) for local zero-cost search over CVE/CWE/OWASP corpus.
-- **Agent Framework**: **LangGraph** (StateGraph DAG) for deterministic multi-step audit flow.
+- **Vector DB & Embeddings (for RAG)**: Local Vector RAG over authoritative CWE Top 25 and OWASP corpus (`rag_engine/vector_store.py`) with sub-millisecond retrieval.
+- **Agent Framework**: **LangGraph** StateGraph DAG (`Ingest` → `Parse AST` → `Scan Vulnerabilities` → `RAG Grounding` → `Synthesize Fixes` → `Compile Report`).
+- **Baseline UI**: Modern dark-mode HTML5/Tailwind dashboard mounted at `/` in FastAPI for immediate browser testing.
 
 ## Progress Log
+### [2026-10-02] — Vector RAG, LangGraph Agent & Baseline UI Complete
+- Implemented `rag_engine/corpus/cwe_owasp_knowledge_base.json` covering CWE-89, CWE-798, CWE-78, CWE-79, CWE-502, CWE-328, CWE-22, CWE-918.
+- Implemented `rag_engine/vector_store.py` with FAISS & sentence-transformers vector index and resilient semantic fallback.
+- Implemented `agent/state.py`, `agent/nodes.py`, and `agent/orchestrator.py` defining the LangGraph StateGraph DAG.
+- Connected LangGraph agent orchestrator into FastAPI background audit execution worker.
+- Built interactive baseline UI in `frontend/index.html` mounted directly on `http://localhost:8000/`.
+- Verified 100% test pass across `verify_rag.py`, `verify_agent.py`, and `test_e2e_pipeline.py`.
+
 ### [2026-10-02] — Phase 0 Backend Foundation Complete
-- Implemented `backend/requirements.txt` with FastAPI, Uvicorn, Pydantic, GitPython, and NetworkX.
-- Implemented `backend/schemas.py` with comprehensive Pydantic models (`AuditRequest`, `Finding`, `GraphNode`, `GraphEdge`, `DependencyGraph`, `AuditResult`, `TaskStatusResponse`, `HealthResponse`).
-- Implemented `backend/services/ingestor.py` with shallow git cloning (`--depth 1`), safe zip extraction (Zip Slip mitigation), and multi-language file scanner.
-- Implemented `backend/services/task_manager.py` with thread-safe async task tracking (0-100% progress).
-- Implemented `backend/routers/audit.py` with `/api/audit`, `/api/status/{task_id}`, `/api/report/{audit_id}`, and `/api/sample-report`.
-- Implemented `backend/main.py` with CORS middleware and `/api/health`.
-- Verified 100% test pass via `backend/tests/verify_backend.py`.
+- Implemented `backend/requirements.txt`, `backend/schemas.py`, `backend/services/ingestor.py`, `backend/services/task_manager.py`, `backend/routers/audit.py`, and `backend/main.py`.
+- Verified test pass via `backend/tests/verify_backend.py`.
 
 ### [2026-10-02] — Team Division & Branch Strategy Refinement
 - Updated roadmap to 3-branch structure: `main` (Backend + AI + Lead), `feature/ast-graph-parser` (Friend 2), `feature/frontend-dashboard` (Friends 3 & 4 collaborative).
