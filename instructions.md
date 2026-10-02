@@ -1,88 +1,138 @@
 # AI Workflow & Implementation Instructions 🤖
 
-Welcome AI Assistant! This document contains the mandatory workflow guidelines and dependency chain rules for developing components in the **Codebase Architecture & Risk Auditor** project repository.
+Welcome AI Assistant! This document contains the **strict, mandatory workflow guidelines** for developing components in the **Codebase Architecture & Risk Auditor** project repository.
+
+When any AI coding assistant (Antigravity, Claude, ChatGPT, Cursor, etc.) opens this project, it **MUST** read and adhere to all the rules below before executing any code changes.
 
 ---
 
-## 🔗 TEAM BRANCHES & RESPONSIBILITY DIVISION
+## 🛑 MANDATORY ENFORCEMENT RULES FOR ALL AI ASSISTANTS
 
-### 🌿 Branch 1: `main` (Handled by Team Lead)
-- **Whole Backend:** FastAPI REST server, Pydantic schemas (`backend/schemas.py`), repository ingestion service, background task manager, API routes (`/api/audit`, `/api/health`, `/api/status`, `/api/report`).
-- **AI Models & Classifier:** Fine-tuned `microsoft/codebert-base` vulnerability classifier.
-- **Vector RAG Engine:** Local FAISS vector index + `sentence-transformers` (`all-MiniLM-L6-v2`) on CWE/OWASP corpus.
-- **Agent Workflow:** LangGraph StateGraph DAG agent (`Ingest` → `Scan` → `RAG` → `Synthesize` → `Report`).
-- **Baseline Frontend:** Simple test frontend to verify end-to-end audit execution.
+### 1. 📂 Root Directory Enforcement
+- **Crucial:** Confirm that your current working directory (`cwd`) is the **cloned repository root directory** (e.g., `7th-Sem-Project-` or your project root).
+- **DO NOT** execute commands from parent folders (e.g., `C:/projects/`) or nested subfolders (e.g., `backend/` or `frontend/`).
+- All module executions must use root-relative paths (e.g., `python -m backend.main` or `python parser_engine/tests/test_parser.py`).
 
-### 🌿 Branch 2: `feature/ast-graph-parser` (Handled by Friend 2)
-- **AST Slicer:** Function extraction with exact line numbers (`filename.py:L42-L58`) using Python `ast` and `tree-sitter`.
-- **Call-Graph Builder:** NetworkX directed dependency graph exporting `{ nodes: [...], edges: [...] }` JSON matching backend schemas.
-- **Unit Tests:** `pytest` test suite in `tests/test_parser.py`.
+### 2. 🚫 STRICT TASK BOUNDARIES (DO NOT TOUCH OTHER FOLDERS)
+- **If you are Friend 2 (AST & Call-Graph Lead):**
+  - You **ONLY** modify files inside `parser_engine/`.
+  - You are **STRICTLY FORBIDDEN** from modifying `backend/`, `rag_engine/`, `agent/`, `ml_pipeline/`, or `frontend/`.
+- **If you are Friends 3 & 4 (Frontend UI/UX Team):**
+  - You **ONLY** modify files inside `frontend/`.
+  - You are **STRICTLY FORBIDDEN** from modifying `backend/`, `rag_engine/`, `agent/`, `ml_pipeline/`, or `parser_engine/`.
+- **The Team Lead handles:** `backend/`, `rag_engine/`, `agent/`, `ml_pipeline/`, and `main` branch merging.
 
-### 🌿 Branch 3: `feature/frontend-dashboard` (Handled Collaboratively by Friends 3 & 4)
-- **Modern Dashboard:** React (Vite) + Tailwind CSS dark-mode dashboard (`#0D1117`).
-- **Visual Components:** Security Health Score dial (0–100), filterable findings table, side-by-side code diff viewer.
-- **Graph Visualizer:** Interactive React Flow call-graph component rendering backend-provided dependency graph.
-- **Polished UX:** Real-time audit progress bar, error handling, and citation modals.
+### 3. 🚫 NEVER TRAIN THE MODEL (NO GPU ENVIRONMENT)
+- The **CodeBERT (125M parameter)** neural model has **ALREADY BEEN TRAINED** by the Team Lead on a local dedicated **NVIDIA RTX 3050 GPU** (achieving **87.50% Accuracy** and **0.8571 F1-Score** on the CodeXGLUE Devign dataset).
+- Teammate systems do **NOT** have this GPU environment configured.
+- **DO NOT RUN `python ml_pipeline/train.py` OR ATTEMPT MODEL RETRAINING.** The existing backend and agent automatically utilize the saved SafeTensors weights or built-in heuristic fallbacks.
 
----
+### 4. 🛡️ GIT HYGIENE: NEVER PUSH PACKAGES, VENVS, OR CHECKPOINTS
+- Check `.gitignore` before every commit.
+- The following directories and files must **NEVER** be staged or pushed to GitHub:
+  - `venv/`, `.venv/`, `env/` (Python virtual environments)
+  - `node_modules/` (Node packages)
+  - `data/` (Raw dataset splits)
+  - `ml_pipeline/checkpoints/` (Heavy binary weights)
+  - `.env` (Secret files)
+  - `__pycache__/`, `.pytest_cache/`, `dist/`
+- Never run `git add .` blindly. Only stage your specific source files!
 
-## 📌 STEP 1: Repository Context & Protocol Inspection
-1. Clone or pull the latest changes from the official GitHub repository:
-   ```bash
-   git clone https://github.com/Chetan-2715/7th-Sem-Project-.git
-   cd 7th-Sem-Project-
-   git pull origin main
-   ```
-2. Inspect the core specification files:
-   - [`PRD.md`](file:///d:/7th%20SEM%20MAJOR/PRD.md) — Vision, scope, and core requirements.
-   - [`Architecture.md`](file:///d:/7th%20SEM%20MAJOR/Architecture.md) — System flow, folder structure, API schemas, and tech stack choices.
-   - [`Design.md`](file:///d:/7th%20SEM%20MAJOR/Design.md) — UI design tokens, dark mode palette (`#0D1117`), typography, layout principles.
-   - [`Phases.md`](file:///d:/7th%20SEM%20MAJOR/Phases.md) — Sequential build roadmap and team dependency chain.
-   - [`Rules.md`](file:///d:/7th%20SEM%20MAJOR/Rules.md) — Engineering guidelines, error handling, security constraints, and forbidden practices.
-   - [`Memory.md`](file:///d:/7th%20SEM%20MAJOR/Memory.md) — Living log of completed work, decisions, and system state.
+### 5. 🧪 MANDATORY VERIFICATION BEFORE CLAIMING COMPLETION
+- Writing code without running it is **strictly forbidden**.
+- You **MUST** write and execute an automated verification script or run manual verification commands:
+  - For `parser_engine/`: Run `python parser_engine/tests/test_parser.py` and ensure an exit code of `0` with verified nodes and edges.
+  - For `frontend/`: Verify dashboard rendering and API communication against `http://localhost:8000/api/sample-report`.
+- **Never claim a task is completed until you have verified the execution output in your terminal.**
 
----
-
-## 📌 STEP 2: Branch Creation & Git Isolation
-Do **NOT** commit directly to `main` (unless you are the Team Lead). Create and checkout your assigned feature branch:
-- **Friend 2 (AST & Call-Graph Lead):** `git checkout -b feature/ast-graph-parser`
-- **Friends 3 & 4 (Collaborative Frontend Team):** `git checkout -b feature/frontend-dashboard`
-
----
-
-## 📌 STEP 3: Phase Audit & Dependency Check
-1. Read `Phases.md` and `Memory.md` to verify active phase tasks.
-2. Confirm you are building against the schema contracts defined in `backend/schemas.py`.
+### 6. 🌿 BRANCH ISOLATION & GIT WORKFLOW
+- **DO NOT** commit directly to `main`.
+- Create and checkout your designated branch:
+  - **Friend 2:** `git checkout -b feature/ast-graph-parser`
+  - **Friends 3 & 4:** `git checkout -b feature/frontend-dashboard`
+- Push **ONLY** to your specific branch:
+  - Friend 2: `git push -u origin feature/ast-graph-parser`
+  - Friends 3 & 4: `git push -u origin feature/frontend-dashboard`
 
 ---
 
-## 📌 STEP 4: Accurate Implementation & Rigorous Testing
-1. Write clean, modular, production-grade code in your designated folder (`parser_engine/` or `frontend/`).
-2. Follow all guidelines in `Rules.md` (no hardcoded secrets, explicit exception handling, clean type hints).
-3. **MANDATORY TESTING:** Run local tests (`pytest` for parser, `npm run dev` for frontend) to guarantee 100% correctness. Your code MUST NOT fail or break downstream work for other team members.
+## 👥 TEAM RESPONSIBILITIES & BRANCH ARCHITECTURE
+
+```
+                      ┌────────────────────────────────────────┐
+                      │              origin/main               │
+                      │   (Team Lead: Backend, ML, RAG, Agent)  │
+                      └───────┬────────────────────────┬───────┘
+                              │                        │
+                              ▼                        ▼
+        ┌───────────────────────────┐    ┌───────────────────────────┐
+        │ feature/ast-graph-parser  │    │ feature/frontend-dashboard│
+        │       (Friend 2)          │    │      (Friends 3 & 4)      │
+        │ • AST Function Slicing    │    │ • React + Vite + Tailwind │
+        │ • NetworkX Directed Graph │    │ • Health Score Gauge Dial │
+        │ • Blast Radius Analysis   │    │ • React Flow Visualizer   │
+        └───────────────────────────┘    └───────────────────────────┘
+```
+
+### 🌿 Branch 1: `main` (Team Lead)
+- **FastAPI REST Server:** Routes (`/api/audit`, `/api/status/{task_id}`, `/api/report/{audit_id}`, `/api/sample-report`).
+- **Pydantic v2 Schemas:** [`backend/schemas.py`](backend/schemas.py) (The single source of truth for all data contracts).
+- **Ingestion & Security:** Shallow git cloner and Zip Slip-safe zip extractor (`backend/services/ingestor.py`).
+- **Vector RAG Engine:** Local FAISS vector index (`rag_engine/`) over MITRE CWE Top 25 & OWASP Top 10.
+- **LangGraph Agent:** Stateful DAG workflow (`agent/`) synthesizing side-by-side patch diffs.
+- **CodeBERT Model:** Trained weights and inference engine (`ml_pipeline/`).
+
+### 🌿 Branch 2: `feature/ast-graph-parser` (Friend 2)
+- **`parser_engine/ast_slicer.py`**:
+  - Extract discrete function blocks with exact line numbers (`filename.py:L42-L58`).
+  - Calculate cyclomatic complexity and argument count.
+- **`parser_engine/graph_builder.py`**:
+  - Build `networkx.DiGraph` representing function calls, cross-file imports, and class inheritances.
+  - Return JSON strictly adhering to the schema in `backend/schemas.py`:
+    ```json
+    {
+      "nodes": [{"id": "file.py:func", "label": "func()", "type": "function", "risk": "Medium"}],
+      "edges": [{"source": "main.py:entry", "target": "file.py:func", "relationship": "calls"}]
+    }
+    ```
+  - Implement **blast radius** calculation for vulnerable nodes.
+- **`parser_engine/tests/test_parser.py`**:
+  - Standalone verification script asserting that functions are sliced correctly and the NetworkX graph exports valid nodes/edges.
+
+### 🌿 Branch 3: `feature/frontend-dashboard` (Friends 3 & 4)
+- **`frontend/`**:
+  - Build a responsive dark-mode developer dashboard (React + Vite + Tailwind CSS or enhanced vanilla JS/CSS) styled in `#0D1117`.
+  - **Audit Form:** Accept GitHub repository URL or `.zip` file upload.
+  - **Real-Time Polling:** Poll `GET /api/status/{task_id}` for progress (0%–100%).
+  - **Security Health Score Dial:** Visual SVG gauge showing score (0–100).
+  - **Filterable Findings Table:** Filter by severity (Critical, High, Medium, Low) and CWE/OWASP categories.
+  - **Side-by-Side Diff Viewer:** Split viewer showing vulnerable code vs. synthesized fix.
+  - **React Flow / Cytoscape Graph:** Interactive canvas visualizing call-graph nodes and edges.
+  - Connect to `http://localhost:8000/api/sample-report` for instant mock testing without waiting for full repo scans.
 
 ---
 
-## 📌 STEP 5: Update Living Documentation & State
-Upon successful testing:
-1. Update `Memory.md` logging what was implemented, test results, and setup instructions.
-2. Mark completed tasks in `Phases.md`.
+## 📋 STEP-BY-STEP EXECUTION PROTOCOL FOR AI ASSISTANTS
 
----
-
-## 📌 STEP 6: Clean Up & Push Feature Branch
-1. **MANDATORY .GITIGNORE CHECK:** Ensure all unwanted build artifacts, virtual environments (`.venv`, `env/`), `__pycache__`, `node_modules/`, `dist/`, `.pytest_cache`, and temporary files are strictly included in `.gitignore`.
-2. Commit your work with a descriptive commit message:
-   ```bash
-   git add <your_modified_files> Memory.md Phases.md .gitignore
-   git commit -m "Complete <your_feature_name> and update Memory.md"
-   git push -u origin feature/<your_branch_name>
-   ```
-
----
-
-## 📌 STEP 7: Final Teammate Notification
-Print a clear final summary for the user:
-- Summary of what was built and verified.
-- Command-line instructions on how to test or run the module.
-- Explicit prompt telling the teammate to notify the **Team Lead (main branch handler)** that branch `feature/<your_branch_name>` is ready to merge into `main`.
+1. **Step 1: Context Ingestion**
+   - Read [`README.md`](README.md), [`INSTRUCTIONS.md`](INSTRUCTIONS.md), and [`backend/schemas.py`](backend/schemas.py).
+   - Identify your exact assigned role and constraints.
+2. **Step 2: Environment Check**
+   - Confirm current working directory is the repository root.
+   - Run `git status` to verify working branch.
+3. **Step 3: Branch Creation**
+   - Switch to your feature branch (`git checkout -b feature/<branch-name>`).
+4. **Step 4: Implementation**
+   - Write clean, modular, typed code **ONLY** inside your assigned directory (`parser_engine/` or `frontend/`).
+5. **Step 5: Rigorous Verification**
+   - Execute test scripts in the terminal.
+   - Confirm terminal exit code is `0` and all assertions pass.
+6. **Step 6: Git Hygiene Check & Push**
+   - Inspect `git status`. Ensure `venv/`, `node_modules/`, `checkpoints/`, or temporary files are NOT staged.
+   - Commit only your source files.
+   - Push to your feature branch:
+     ```bash
+     git push -u origin feature/<branch-name>
+     ```
+7. **Step 7: Notify Team Lead**
+   - Provide summary of verified code and announce readiness for Pull Request review into `main`.
