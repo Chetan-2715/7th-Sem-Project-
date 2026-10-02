@@ -119,9 +119,12 @@ def main():
 
     # Load Tokenizer & Model
     model_name = "microsoft/codebert-base"
-    print(f"\n[Loading Pretrained CodeBERT: {model_name}]...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name,
+        num_labels=2,
+        use_safetensors=True
+    )
     model.to(device)
 
     # Prepare DataLoaders
@@ -187,7 +190,7 @@ def main():
         # Checkpoint if F1 improved
         if val_metrics["f1"] >= best_f1:
             best_f1 = val_metrics["f1"]
-            print(f"   ⭐ New Best Model! Saving checkpoint to {OUTPUT_DIR}...")
+            print(f"   [*] New Best Model! Saving checkpoint to {OUTPUT_DIR}...")
             model.save_pretrained(str(OUTPUT_DIR))
             tokenizer.save_pretrained(str(OUTPUT_DIR))
 

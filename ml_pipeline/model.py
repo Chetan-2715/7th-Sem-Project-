@@ -32,7 +32,8 @@ class CodeBERTClassifier:
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path)
         self.model = AutoModelForSequenceClassification.from_pretrained(
             self.model_name_or_path,
-            num_labels=self.num_labels
+            num_labels=self.num_labels,
+            use_safetensors=True
         )
 
     def to(self, device):

@@ -1,0 +1,26 @@
+# Core Web Framework & API
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.6.0
+python-multipart>=0.0.9
+
+# Deep Learning & Transformers
+torch>=2.5.0
+transformers>=4.40.0
+datasets>=2.18.0
+accelerate>=0.28.0
+safetensors>=0.4.2
+scikit-learn>=1.4.0
+
+# Vector RAG & Embeddings
+faiss-cpu>=1.8.0
+sentence-transformers>=2.5.0
+
+# Agent & Graph Orchestration
+langgraph>=0.0.30
+langchain-core>=0.1.30
+networkx>=3.2.1
+
+# Utilities
+requests>=2.31.0
+tqdm>=4.66.0
