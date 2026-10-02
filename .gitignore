@@ -7,6 +7,13 @@ diagrams/
 Project_Synopsis_Review_1_Official.md
 TEAM_GUIDE_AND_REPORT_PROMPT.md
 
+# Datasets (Do not push large datasets to Git)
+data/
+ml_pipeline/data/
+*.jsonlines
+*.jsonl
+*.gz
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -17,6 +24,8 @@ __pycache__/
 *.bin
 *.safetensors
 ml_pipeline/checkpoints/
+ml_pipeline/weights/
+checkpoints/
 
 # Virtual Environments & Dependencies
 venv/

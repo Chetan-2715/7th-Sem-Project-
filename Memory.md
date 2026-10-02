@@ -11,37 +11,36 @@
 ---
 
 ## Current Status
-- **Phase**: Phase 0 (Backend), Phase 3 (RAG Engine), Phase 4 (LangGraph Agent), Phase 6 (Baseline UI) — ALL COMPLETED & TESTED!
-- **Active Task**: Vector RAG Engine & LangGraph Agent workflow fully built and integrated into FastAPI backend with baseline test UI. Next up: CodeBERT training/dataset pipeline (`ml_pipeline/`).
+- **Phase**: Phase 0 (Backend), Phase 1-3 (RAG & Dataset), Phase 4 (LangGraph Agent), Phase 6 (Baseline UI) — ALL COMPLETED!
+- **Active Task**: All backend, RAG, agent, and ML training scripts are written and verified. Ready for user to run training in terminal.
 - **Parallel Branches**:
   - Friend 2: `feature/ast-graph-parser` (AST parser & NetworkX graph)
   - Friends 3 & 4: `feature/frontend-dashboard` (Collaborative React + Tailwind + React Flow dashboard)
-- **Next up**: Build `ml_pipeline/` for CodeXGLUE Devign dataset downloading, preprocessing, and fine-tuning CodeBERT (`microsoft/codebert-base`).
+- **Next up**: User runs `python ml_pipeline/train.py` in terminal when ready.
 
 ## Key Decisions Log
 - **Team Responsibilities & Branching**:
   - **Lead (`main`)**: Whole backend API + repo ingestion + CodeBERT model + FAISS RAG + LangGraph agent + baseline frontend.
   - **Friend 2 (`feature/ast-graph-parser`)**: AST parser (`ast_slicer.py`) + NetworkX call graph (`graph_builder.py`).
   - **Friends 3 & 4 (`feature/frontend-dashboard`)**: Collaborative React + Vite + Tailwind CSS + React Flow dashboard.
-- **Backend & Schemas**: Central Pydantic schemas in `backend/schemas.py` are the single source of truth for both the parser output and the frontend UI.
-- **Trained Model**: `microsoft/codebert-base` (125M parameters) — fits RTX 3050 VRAM (4GB-8GB).
-- **Vector DB & Embeddings (for RAG)**: Local Vector RAG over authoritative CWE Top 25 and OWASP corpus (`rag_engine/vector_store.py`) with sub-millisecond retrieval.
-- **Agent Framework**: **LangGraph** StateGraph DAG (`Ingest` → `Parse AST` → `Scan Vulnerabilities` → `RAG Grounding` → `Synthesize Fixes` → `Compile Report`).
-- **Baseline UI**: Modern dark-mode HTML5/Tailwind dashboard mounted at `/` in FastAPI for immediate browser testing.
+- **RAG Knowledge Base**: Expanded to cover the full **MITRE CWE Top 25** and OWASP standards.
+- **Trained Model**: `microsoft/codebert-base` (125M parameters) with PyTorch / Hugging Face sequence classification head. Mixed precision (`fp16=True`) enabled for RTX 3050 GPU.
+- **Dataset Storage**: `data/devign/` is strictly gitignored to protect GitHub repo from large binaries.
 
 ## Progress Log
+### [2026-10-02] — ML Pipeline & Expanded RAG Complete
+- Expanded `rag_engine/corpus/cwe_owasp_knowledge_base.json` to the MITRE CWE Top 25.
+- Created `ml_pipeline/download_dataset.py` with automated CodeXGLUE Devign dataset fetching.
+- Created `ml_pipeline/dataset.py` implementing PyTorch tokenization for CodeBERT.
+- Created `ml_pipeline/model.py` wrapping `microsoft/codebert-base` with classification head.
+- Created `ml_pipeline/train.py` featuring RTX 3050 CUDA detection, fp16 acceleration, and live terminal progress.
+- Created `ml_pipeline/inference.py` for testing individual code snippets.
+- Maintained 100% clean git tree (data and checkpoints ignored).
+
 ### [2026-10-02] — Vector RAG, LangGraph Agent & Baseline UI Complete
-- Implemented `rag_engine/corpus/cwe_owasp_knowledge_base.json` covering CWE-89, CWE-798, CWE-78, CWE-79, CWE-502, CWE-328, CWE-22, CWE-918.
-- Implemented `rag_engine/vector_store.py` with FAISS & sentence-transformers vector index and resilient semantic fallback.
-- Implemented `agent/state.py`, `agent/nodes.py`, and `agent/orchestrator.py` defining the LangGraph StateGraph DAG.
-- Connected LangGraph agent orchestrator into FastAPI background audit execution worker.
-- Built interactive baseline UI in `frontend/index.html` mounted directly on `http://localhost:8000/`.
-- Verified 100% test pass across `verify_rag.py`, `verify_agent.py`, and `test_e2e_pipeline.py`.
+- Built FAISS Vector RAG engine and LangGraph StateGraph DAG.
+- Connected agent orchestrator to FastAPI backend worker.
+- Built baseline test UI in `frontend/index.html` mounted at `http://localhost:8000/`.
 
 ### [2026-10-02] — Phase 0 Backend Foundation Complete
-- Implemented `backend/requirements.txt`, `backend/schemas.py`, `backend/services/ingestor.py`, `backend/services/task_manager.py`, `backend/routers/audit.py`, and `backend/main.py`.
-- Verified test pass via `backend/tests/verify_backend.py`.
-
-### [2026-10-02] — Team Division & Branch Strategy Refinement
-- Updated roadmap to 3-branch structure: `main` (Backend + AI + Lead), `feature/ast-graph-parser` (Friend 2), `feature/frontend-dashboard` (Friends 3 & 4 collaborative).
-- Synchronized `Phases.md`, `instructions.md`, and `Memory.md`.
+- Implemented FastAPI backend, schemas, ingestor, task manager, and test suites.

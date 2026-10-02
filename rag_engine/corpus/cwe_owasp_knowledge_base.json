@@ -86,5 +86,115 @@
     "mitigation": "Enforce strict allowlists of acceptable hostnames/domains. Reject loopback and private IP ranges (127.0.0.1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.169.254).",
     "example_vulnerable": "response = requests.get(user_provided_url)",
     "example_fix": "validate_safe_external_url(user_provided_url)\nresponse = requests.get(user_provided_url, timeout=5)"
+  },
+  {
+    "cwe_id": "CWE-94",
+    "cwe_title": "Improper Control of Generation of Code ('Code Injection')",
+    "owasp_category": "A03:2021 - Injection",
+    "severity": "Critical",
+    "description": "The application receives untrusted input and passes it to dynamic evaluation functions (e.g., Python eval, exec, JavaScript eval), allowing arbitrary code execution in the application context.",
+    "keywords": ["code injection", "eval(", "exec(", "Function(", "compile(", "dynamic evaluation"],
+    "mitigation": "Never use eval() or exec() with untrusted user input. Use safe data parsing libraries (such as json.loads or ast.literal_eval) instead of code execution.",
+    "example_vulnerable": "result = eval(user_expression)",
+    "example_fix": "import ast\nresult = ast.literal_eval(user_expression)"
+  },
+  {
+    "cwe_id": "CWE-20",
+    "cwe_title": "Improper Input Validation",
+    "owasp_category": "A03:2021 - Injection",
+    "severity": "Medium",
+    "description": "The product receives input or data, but it does not validate or incorrectly validates that the input, as well as its properties (e.g. size, type, range, format), conforms to expected standards.",
+    "keywords": ["input validation", "unvalidated input", "missing check", "raw params", "no schema"],
+    "mitigation": "Implement strict input validation using schema validation libraries such as Pydantic, Zod, or validator decorators. Define explicit allowlists for allowed inputs.",
+    "example_vulnerable": "def set_age(age):\n    user.age = int(age)",
+    "example_fix": "def set_age(age: int):\n    if not (0 <= age <= 120):\n        raise ValueError('Age must be between 0 and 120')\n    user.age = age"
+  },
+  {
+    "cwe_id": "CWE-352",
+    "cwe_title": "Cross-Site Request Forgery ('CSRF')",
+    "owasp_category": "A01:2021 - Broken Access Control",
+    "severity": "High",
+    "description": "The web application does not, or can not, verify whether a well-formed, valid, consistent request was intentionally provided by the user who submitted the request.",
+    "keywords": ["csrf", "cross-site request forgery", "missing token", "state-changing get", "unprotected post"],
+    "mitigation": "Use anti-CSRF tokens for state-changing requests (POST, PUT, DELETE), configure SameSite=Lax or SameSite=Strict on session cookies, and enforce custom request headers.",
+    "example_vulnerable": "@app.post('/transfer')\ndef transfer(amount, recipient):\n    execute_transfer(amount, recipient)",
+    "example_fix": "@app.post('/transfer')\ndef transfer(amount, recipient, csrf_token: str = Depends(verify_csrf)):\n    execute_transfer(amount, recipient)"
+  },
+  {
+    "cwe_id": "CWE-434",
+    "cwe_title": "Unrestricted Upload of File with Dangerous Type",
+    "owasp_category": "A08:2021 - Software and Data Integrity Failures",
+    "severity": "Critical",
+    "description": "The software allows the attacker to upload or transfer files of dangerous types (e.g. .php, .py, .exe, .sh) that can be directly executed within the server environment.",
+    "keywords": ["file upload", "arbitrary file upload", "unrestricted upload", "save file", "file extension"],
+    "mitigation": "Validate file extensions against an allowlist (e.g., .png, .jpg), verify MIME types and magic bytes, generate randomized unique filenames, and store uploaded files outside the web root.",
+    "example_vulnerable": "file.save('/var/www/uploads/' + file.filename)",
+    "example_fix": "ext = Path(file.filename).suffix.lower()\nif ext not in ALLOWED_EXTENSIONS:\n    raise ValueError('Disallowed file type')\nsafe_filename = f'{uuid.uuid4()}{ext}'\nfile.save(UPLOAD_DIR / safe_filename)"
+  },
+  {
+    "cwe_id": "CWE-287",
+    "cwe_title": "Improper Authentication",
+    "owasp_category": "A07:2021 - Identification and Authentication Failures",
+    "severity": "Critical",
+    "description": "When an actor claims to have a given identity, the software does not prove or improperly proves that the claim is correct.",
+    "keywords": ["authentication", "broken auth", "bypass auth", "missing password check", "weak auth"],
+    "mitigation": "Enforce multi-factor authentication, use proven authentication libraries (OAuth2, OpenID Connect), rate-limit authentication attempts, and never trust client-supplied identity parameters.",
+    "example_vulnerable": "if request.headers.get('User-Id') == 'admin':\n    grant_admin_access()",
+    "example_fix": "user = authenticate_bearer_token(request.headers.get('Authorization'))\nif not user or not user.is_admin:\n    raise HTTPException(status_code=403, detail='Forbidden')"
+  },
+  {
+    "cwe_id": "CWE-862",
+    "cwe_title": "Missing Authorization",
+    "owasp_category": "A01:2021 - Broken Access Control",
+    "severity": "High",
+    "description": "The software does not perform an authorization check when an actor attempts to access a resource or perform an action.",
+    "keywords": ["missing authorization", "unprotected endpoint", "missing role check", "idor", "privilege check"],
+    "mitigation": "Implement role-based (RBAC) or attribute-based access control (ABAC) on every protected endpoint and verify that the authenticated user owns the requested record.",
+    "example_vulnerable": "@app.get('/document/{doc_id}')\ndef get_doc(doc_id):\n    return db.get_doc(doc_id)",
+    "example_fix": "@app.get('/document/{doc_id}')\ndef get_doc(doc_id, current_user = Depends(get_current_user)):\n    doc = db.get_doc(doc_id)\n    if doc.owner_id != current_user.id:\n        raise HTTPException(status_code=403, detail='Unauthorized')\n    return doc"
+  },
+  {
+    "cwe_id": "CWE-787",
+    "cwe_title": "Out-of-bounds Write ('Buffer Overflow')",
+    "owasp_category": "A06:2021 - Vulnerable and Outdated Components",
+    "severity": "Critical",
+    "description": "The software writes data past the end, or before the beginning, of the intended buffer in C/C++, causing memory corruption, crashes, or arbitrary code execution.",
+    "keywords": ["buffer overflow", "strcpy", "sprintf", "strcat", "memcpy bounds", "out of bounds write"],
+    "mitigation": "Use bounds-checking functions (strncpy, snprintf), avoid raw pointer arithmetic without bounds checks, or use memory-safe abstractions (std::string, std::vector).",
+    "example_vulnerable": "char buffer[64];\nstrcpy(buffer, user_input);",
+    "example_fix": "char buffer[64];\nsnprintf(buffer, sizeof(buffer), \"%s\", user_input);"
+  },
+  {
+    "cwe_id": "CWE-125",
+    "cwe_title": "Out-of-bounds Read",
+    "owasp_category": "A06:2021 - Vulnerable and Outdated Components",
+    "severity": "High",
+    "description": "The software reads data past the end, or before the beginning, of the intended buffer, allowing attackers to leak sensitive memory, cryptographic keys, or crash the application.",
+    "keywords": ["out of bounds read", "buffer over-read", "array bounds", "index out of range", "memory leak"],
+    "mitigation": "Always perform explicit boundary checks on array indices and pointer offsets before accessing memory.",
+    "example_vulnerable": "int value = array[user_index];",
+    "example_fix": "if (user_index < 0 || user_index >= ARRAY_SIZE) {\n    return ERROR_OUT_OF_BOUNDS;\n}\nint value = array[user_index];"
+  },
+  {
+    "cwe_id": "CWE-476",
+    "cwe_title": "NULL Pointer Dereference",
+    "owasp_category": "A06:2021 - Vulnerable and Outdated Components",
+    "severity": "Medium",
+    "description": "The application dereferences a pointer that evaluates to NULL, leading to segmentation faults, crashes, or denial of service.",
+    "keywords": ["null pointer", "nullptr", "segfault", "dereference null", "NoneType has no attribute"],
+    "mitigation": "Always check pointers and object references for NULL / None before invoking methods or accessing member fields.",
+    "example_vulnerable": "char* ptr = malloc(size);\nptr[0] = 'a';",
+    "example_fix": "char* ptr = malloc(size);\nif (ptr == NULL) {\n    return ERROR_MEM_ALLOC;\n}\nptr[0] = 'a';"
+  },
+  {
+    "cwe_id": "CWE-190",
+    "cwe_title": "Integer Overflow or Wraparound",
+    "owasp_category": "A06:2021 - Vulnerable and Outdated Components",
+    "severity": "Medium",
+    "description": "The software performs an integer calculation that can produce an integer overflow or wraparound, resulting in unexpected values used for memory allocation sizes.",
+    "keywords": ["integer overflow", "wraparound", "malloc size calculation", "arithmetic overflow"],
+    "mitigation": "Check for integer overflow before arithmetic operations that calculate buffer sizes or loop counters.",
+    "example_vulnerable": "int total_size = count * item_size;\nchar* buf = malloc(total_size);",
+    "example_fix": "if (item_size > 0 && count > INT_MAX / item_size) {\n    return ERROR_OVERFLOW;\n}\nchar* buf = malloc(count * item_size);"
   }
 ]
