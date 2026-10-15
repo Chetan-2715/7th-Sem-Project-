@@ -21,6 +21,13 @@ from backend.schemas import (
 from rag_engine.vector_store import rag_engine
 from agent.state import AuditAgentState
 
+try:
+    from parser_engine.ast_slicer import ASTSlicer
+    from parser_engine.graph_builder import GraphBuilder
+    HAS_PARSER_ENGINE = True
+except ImportError:
+    HAS_PARSER_ENGINE = False
+
 
 def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
     """Slices source files into discrete function chunks and extracts import/call links."""
@@ -29,6 +36,48 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
     graph_nodes = []
     graph_edges = []
 
+    # Priority 1: Use modular parser_engine (ASTSlicer & NetworkX GraphBuilder)
+    if HAS_PARSER_ENGINE and raw_files:
+        try:
+            builder = GraphBuilder(include_file_nodes=True)
+            for file_info in raw_files:
+                rel_path = file_info["rel_path"]
+                content = file_info["content"]
+                builder.add_file(rel_path, content=content)
+
+            builder.build_graph()
+            pydantic_graph = builder.to_pydantic()
+            graph_nodes = pydantic_graph.nodes
+            graph_edges = pydantic_graph.edges
+
+            for rel_path, slices in builder.file_functions.items():
+                for s in slices:
+                    lang = "python" if rel_path.endswith((".py", ".pyw")) else "javascript" if rel_path.endswith((".js", ".jsx", ".ts", ".tsx")) else "c"
+                    function_chunks.append({
+                        "file_path": s.file_path,
+                        "function_name": s.name,
+                        "line_start": s.line_start,
+                        "line_end": s.line_end,
+                        "code": s.code,
+                        "language": lang,
+                        "complexity": s.cyclomatic_complexity,
+                        "docstring": s.docstring,
+                        "node_id": s.node_id,
+                    })
+
+            if function_chunks:
+                return {
+                    "function_chunks": function_chunks,
+                    "dependency_graph": DependencyGraph(nodes=graph_nodes, edges=graph_edges),
+                    "current_stage": "Parsed AST and generated Call-Graph via parser_engine"
+                }
+        except Exception as e:
+            # Fall back to inline parsing if unexpected error occurs
+            function_chunks = []
+            graph_nodes = []
+            graph_edges = []
+
+    # Priority 2: Built-in inline parsing fallback
     for file_info in raw_files:
         rel_path = file_info["rel_path"]
         content = file_info["content"]
