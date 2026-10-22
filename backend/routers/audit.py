@@ -14,7 +14,7 @@ import asyncio
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException, status, Request
 from pydantic import ValidationError
 
 from backend.schemas import (
@@ -239,22 +239,33 @@ async def execute_background_audit(task_id: str, repo_url: Optional[str] = None,
 
 @router.post("/audit", response_model=TaskStatusResponse)
 async def start_audit(
-    background_tasks: BackgroundTasks,
-    request: Optional[AuditRequest] = None,
-    file: Optional[UploadFile] = File(None),
-    repo_url: Optional[str] = Form(None)
+    raw_request: Request,
+    background_tasks: BackgroundTasks
 ):
     """
     Initiates an automated audit job.
     Accepts either:
-    1. JSON body with `repo_url`
-    2. Multipart form with `repo_url` or uploaded `.zip` archive
+    1. JSON body: {"repo_url": "https://github.com/..."}
+    2. Multipart form-data: with uploaded '.zip' file or 'repo_url' field
     """
     target_url = None
-    if request and request.repo_url:
-        target_url = request.repo_url
-    elif repo_url:
-        target_url = repo_url
+    file = None
+    zip_temp_path = None
+
+    content_type = raw_request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
+        try:
+            body = await raw_request.json()
+            target_url = body.get("repo_url")
+        except Exception:
+            pass
+    elif "multipart/form-data" in content_type:
+        form = await raw_request.form()
+        target_url = form.get("repo_url")
+        upload = form.get("file")
+        if upload and hasattr(upload, "filename") and upload.filename:
+            file = upload
 
     if not target_url and not file:
         raise HTTPException(
@@ -262,21 +273,18 @@ async def start_audit(
             detail="Must provide either a valid 'repo_url' or an uploaded '.zip' file."
         )
 
-    task_id = audit_task_manager.create_task("Starting audit pipeline...")
-
-    zip_temp_path = None
     if file:
         if not file.filename.endswith(".zip"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Uploaded file must be a .zip archive."
             )
-        # Save uploaded file to temp file
         temp_fd, zip_temp_path = tempfile.mkstemp(suffix=".zip")
         with os.fdopen(temp_fd, "wb") as f:
             content = await file.read()
             f.write(content)
 
+    task_id = audit_task_manager.create_task("Starting audit pipeline...")
     background_tasks.add_task(execute_background_audit, task_id, target_url, zip_temp_path)
 
     return audit_task_manager.get_task(task_id)
