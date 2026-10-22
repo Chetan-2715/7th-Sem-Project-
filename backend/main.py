@@ -50,8 +50,12 @@ async def health_check():
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
+frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
-if frontend_dir.exists():
+
+if frontend_dist.exists() and (frontend_dist / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+elif frontend_dir.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
 

@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Codebase Architecture & Risk Auditor — Security Dashboard</title>
+  
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Vis-Network for Interactive Dependency Call-Graph -->
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+  <style>
+    body {
+      background-color: #0D1117;
+      color: #E6EDF3;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .card {
+      background-color: #161B22;
+      border: 1px solid #30363D;
+      border-radius: 8px;
+    }
+    .card-header {
+      background-color: #0D1117;
+      border-bottom: 1px solid #30363D;
+    }
+    .code-box {
+      background-color: #090D13;
+      border: 1px solid #30363D;
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    }
+    /* SVG Gauge Dial */
+    .gauge-circle-bg {
+      fill: none;
+      stroke: #21262D;
+      stroke-width: 10;
+    }
+    .gauge-circle-progress {
+      fill: none;
+      stroke-width: 10;
+      stroke-linecap: round;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+      transition: stroke-dashoffset 1s ease-out, stroke 0.5s ease;
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0D1117;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #30363D;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #58A6FF;
+    }
+    #networkGraphCanvas {
+      width: 100%;
+      height: 480px;
+      background-color: #090D13;
+      border: 1px solid #30363D;
+      border-radius: 6px;
+    }
+    @media print {
+      body { background-color: #FFFFFF; color: #000000; }
+      .no-print { display: none !important; }
+      .card { border: 1px solid #CCC; background: #FFF; color: #000; }
+      .code-box { background: #F6F8FA; color: #000; border: 1px solid #DDD; }
+    }
+  </style>
+</head>
+<body class="p-4 md:p-8">
+  <div class="max-w-7xl mx-auto space-y-6">
+
+    <!-- Top Navigation Header -->
+    <header class="card p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div>
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 text-xl shadow-lg shadow-blue-500/10">
+            <i class="fa-solid fa-shield-halved"></i>
+          </div>
+          <div>
+            <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              Codebase Architecture &amp; Risk Auditor
+              <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-300 border border-blue-700/60 font-mono">v1.0-prod</span>
+            </h1>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Neuro-Symbolic Code Review • CodeBERT 125M • Local FAISS Vector RAG • NetworkX Call Graph • LangGraph Agent
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 self-end md:self-center">
+        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-950/60 text-green-400 border border-green-800/80">
+          <span class="w-2 h-2 mr-2 bg-green-400 rounded-full animate-pulse"></span> Backend Engine Ready
+        </span>
+        <button onclick="loadSampleReport()" class="no-print bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold py-1.5 px-3 rounded border border-gray-700 transition flex items-center gap-1.5 shadow-sm">
+          <i class="fa-solid fa-bolt text-yellow-400"></i> Load Demo Sample
+        </button>
+      </div>
+    </header>
+
+    <!-- Audit Input Panel -->
+    <section class="card p-6 no-print">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-300 flex items-center gap-2">
+          <i class="fa-solid fa-magnifying-glass text-blue-400"></i> Initiate Repository Scan
+        </h2>
+        <span class="text-xs text-gray-400">Supports Public Git Repositories and Local .ZIP Archives</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+        <div class="md:col-span-8">
+          <label class="block text-xs font-medium text-gray-400 mb-1">Public GitHub Repository URL</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+              <i class="fa-brands fa-github text-base"></i>
+            </span>
+            <input type="text" id="repoUrl" placeholder="https://github.com/octocat/Hello-World.git"
+                   class="w-full bg-[#090D13] border border-gray-700 rounded-md pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition">
+          </div>
+        </div>
+        <div class="md:col-span-4 flex items-end gap-2">
+          <button onclick="startAudit()" id="auditBtn"
+                  class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-md text-sm transition flex items-center justify-center gap-2 shadow-md shadow-blue-600/20">
+            <i class="fa-solid fa-play"></i> Start Audit
+          </button>
+        </div>
+      </div>
+
+      <!-- Secondary Upload Options & Configuration Toggles -->
+      <div class="mt-4 pt-4 border-t border-gray-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div class="flex items-center gap-3">
+          <label class="flex items-center gap-2 cursor-pointer bg-gray-800/80 hover:bg-gray-800 px-3 py-1.5 rounded border border-gray-700 text-gray-300 transition">
+            <i class="fa-solid fa-file-zipper text-yellow-400"></i>
+            <span>Upload .ZIP Archive</span>
+            <input type="file" id="zipFile" accept=".zip" class="hidden" onchange="uploadZipAudit(event)">
+          </label>
+          <span id="zipFileName" class="text-gray-400 italic">No file selected</span>
+        </div>
+        <div class="flex items-center gap-4 text-gray-400">
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" id="enableRag" checked class="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-0">
+            <span>Ground via FAISS RAG</span>
+          </label>
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" id="enableMl" checked class="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-0">
+            <span>CodeBERT 125M Scanner</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Real-Time Progress Bar -->
+    <section id="progressPanel" class="card p-6 hidden no-print">
+      <div class="flex justify-between items-center mb-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-circle-notch fa-spin text-blue-400"></i>
+          <span id="progressStage" class="text-sm font-semibold text-blue-400">Initializing pipeline...</span>
+        </div>
+        <span id="progressPct" class="text-sm font-bold text-gray-200">0%</span>
+      </div>
+      <div class="w-full bg-gray-800 rounded-full h-3 overflow-hidden p-0.5 border border-gray-700/60">
+        <div id="progressBar" class="bg-gradient-to-r from-blue-600 to-indigo-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+      </div>
+      <p id="progressMsg" class="text-xs text-gray-400 mt-2 flex items-center gap-1.5">
+        <i class="fa-solid fa-terminal text-gray-500"></i> Connecting to background worker...
+      </p>
+    </section>
+
+    <!-- Main Results Dashboard (Hidden until audit complete) -->
+    <main id="reportDashboard" class="hidden space-y-6">
+
+      <!-- Executive Metrics & Health Dial Grid -->
+      <section class="grid grid-cols-1 md:grid-cols-12 gap-4">
+
+        <!-- Circular SVG Health Score Dial -->
+        <div class="md:col-span-4 card p-6 flex flex-col items-center justify-center text-center">
+          <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Security Health Score</div>
+          <div class="relative w-36 h-36 flex items-center justify-center">
+            <svg class="w-36 h-36" viewBox="0 0 120 120">
+              <circle class="gauge-circle-bg" cx="60" cy="60" r="50"></circle>
+              <circle id="gaugeProgress" class="gauge-circle-progress" cx="60" cy="60" r="50"
+                      stroke-dasharray="314.159" stroke-dashoffset="314.159" stroke="#3FB950"></circle>
+            </svg>
+            <div class="absolute flex flex-col items-center justify-center">
+              <span id="healthScore" class="text-4xl font-black text-white">--</span>
+              <span class="text-[10px] text-gray-400 font-semibold uppercase">out of 100</span>
+            </div>
+          </div>
+          <div id="healthVerdict" class="text-xs font-semibold mt-3 px-3 py-1 rounded-full bg-green-950 text-green-400 border border-green-800">
+            Audit Ready
+          </div>
+        </div>
+
+        <!-- Metric Summary Cards -->
+        <div class="md:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <!-- Total Findings Card -->
+          <div class="card p-5 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Findings</div>
+              <div id="totalFindings" class="text-3xl font-extrabold text-blue-400 mt-1">0</div>
+            </div>
+            <div id="findingsBreakdown" class="text-xs text-gray-400 mt-3 pt-3 border-t border-gray-800 flex flex-wrap gap-2">
+              <span class="text-red-400 font-semibold"><span id="badgeCrit">0</span> Crit</span> •
+              <span class="text-orange-400 font-semibold"><span id="badgeHigh">0</span> High</span> •
+              <span class="text-yellow-400 font-semibold"><span id="badgeMed">0</span> Med</span> •
+              <span class="text-green-400 font-semibold"><span id="badgeLow">0</span> Low</span>
+            </div>
+          </div>
+
+          <!-- Scanned Files Card -->
+          <div class="card p-5 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Files Ingested</div>
+              <div id="scannedFiles" class="text-3xl font-extrabold text-purple-400 mt-1">0</div>
+            </div>
+            <div class="text-xs text-gray-400 mt-3 pt-3 border-t border-gray-800 flex items-center gap-1.5">
+              <i class="fa-solid fa-code text-purple-400"></i> Multi-language AST Parsed
+            </div>
+          </div>
+
+          <!-- Call Graph Functions Card -->
+          <div class="card p-5 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Functions Mapped</div>
+              <div id="parsedFunctions" class="text-3xl font-extrabold text-emerald-400 mt-1">0</div>
+            </div>
+            <div class="text-xs text-gray-400 mt-3 pt-3 border-t border-gray-800 flex items-center gap-1.5">
+              <i class="fa-solid fa-diagram-project text-emerald-400"></i> NetworkX Nodes &amp; Edges
+            </div>
+          </div>
+
+          <!-- Quick Action Bar -->
+          <div class="card p-4 sm:col-span-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 text-gray-400">
+              <i class="fa-solid fa-clock-rotate-left"></i>
+              <span>Audit Completed at: <strong id="scannedAt" class="text-gray-200">--</strong></span>
+            </div>
+            <div class="flex items-center gap-2 no-print">
+              <button onclick="downloadJsonReport()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded border border-gray-700 flex items-center gap-1.5 transition">
+                <i class="fa-solid fa-download text-blue-400"></i> Export JSON
+              </button>
+              <button onclick="window.print()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded border border-gray-700 flex items-center gap-1.5 transition">
+                <i class="fa-solid fa-print text-gray-400"></i> Print Report / PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Interactive Architectural Dependency Call Graph (Vis-Network) -->
+      <section class="card p-6">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+          <div>
+            <h2 class="text-base font-bold text-gray-100 flex items-center gap-2">
+              <i class="fa-solid fa-diagram-project text-blue-400"></i> Interactive Architectural Dependency Graph
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Directed call graph generated via NetworkX. Pan, zoom, and click nodes to explore invocation paths &amp; blast radius.
+            </p>
+          </div>
+          <!-- Graph Legend & Actions -->
+          <div class="flex items-center gap-3 text-xs no-print">
+            <span class="flex items-center gap-1.5 text-gray-300">
+              <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> High Risk Function
+            </span>
+            <span class="flex items-center gap-1.5 text-gray-300">
+              <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span> Benign Function
+            </span>
+            <span class="flex items-center gap-1.5 text-gray-300">
+              <span class="w-2.5 h-2.5 rounded bg-gray-500"></span> Source File
+            </span>
+            <button onclick="fitGraphView()" class="px-2.5 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700">
+              <i class="fa-solid fa-expand"></i> Fit
+            </button>
+          </div>
+        </div>
+
+        <!-- Canvas Container -->
+        <div id="networkGraphCanvas"></div>
+
+        <!-- Node Inspection Details Bar -->
+        <div id="nodeDetailBar" class="mt-3 p-3 bg-[#090D13] border border-gray-800 rounded text-xs text-gray-400 flex flex-wrap justify-between items-center gap-2">
+          <span id="selectedNodeInfo"><i class="fa-solid fa-hand-pointer mr-1 text-gray-500"></i> Click any node above to inspect blast radius, callers, and file details.</span>
+          <span id="selectedNodeStats" class="font-mono text-gray-300"></span>
+        </div>
+      </section>
+
+      <!-- Filterable Vulnerability Findings Table & Diff Reviewer -->
+      <section class="card p-6">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+          <div>
+            <h2 class="text-base font-bold text-gray-100 flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation text-yellow-400"></i> Vulnerability Findings &amp; Grounded Remediations
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Cross-checked against the MITRE CWE Top 25 and OWASP Top 10 with verified side-by-side patch diffs.
+            </p>
+          </div>
+
+          <!-- Severity Filter Tabs & Search -->
+          <div class="flex flex-wrap items-center gap-2 no-print w-full md:w-auto">
+            <div class="relative flex-1 md:flex-initial">
+              <input type="text" id="findingSearch" oninput="filterFindings()" placeholder="Filter findings..."
+                     class="w-full md:w-48 bg-[#090D13] border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500">
+            </div>
+            <div class="flex items-center gap-1 bg-gray-800/80 p-0.5 rounded border border-gray-700 text-xs">
+              <button onclick="setFilter('ALL')" id="filterALL" class="filter-btn px-2.5 py-1 rounded bg-blue-600 text-white font-medium">All</button>
+              <button onclick="setFilter('CRITICAL')" id="filterCRITICAL" class="filter-btn px-2.5 py-1 rounded text-gray-300 hover:text-white">Crit</button>
+              <button onclick="setFilter('HIGH')" id="filterHIGH" class="filter-btn px-2.5 py-1 rounded text-gray-300 hover:text-white">High</button>
+              <button onclick="setFilter('MEDIUM')" id="filterMEDIUM" class="filter-btn px-2.5 py-1 rounded text-gray-300 hover:text-white">Med</button>
+              <button onclick="setFilter('LOW')" id="filterLOW" class="filter-btn px-2.5 py-1 rounded text-gray-300 hover:text-white">Low</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Findings List Container -->
+        <div id="findingsContainer" class="space-y-4"></div>
+
+        <!-- Empty State (if no findings match filter) -->
+        <div id="emptyFindingsState" class="hidden text-center py-12 text-gray-400 text-sm">
+          <i class="fa-solid fa-shield-check text-4xl text-green-400 mb-2"></i>
+          <p>No vulnerabilities match your selected filter criteria!</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center text-xs text-gray-500 py-4 border-t border-gray-800">
+      Codebase Architecture &amp; Risk Auditor • 7th Semester Major Project (Academic Year 2026–2027) • Built with FastAPI, CodeBERT, FAISS &amp; LangGraph
+    </footer>
+
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin.includes('localhost') ? window.location.origin : 'http://localhost:8000';
+    let currentAuditReport = null;
+    let activeFilter = 'ALL';
+    let networkGraphInstance = null;
+
+    // Helper: Severity Badges
+    function getSeverityBadge(severity) {
+      switch((severity || '').toUpperCase()) {
+        case 'CRITICAL':
+          return '<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-950 text-red-300 border border-red-700/80"><i class="fa-solid fa-skull mr-1"></i>CRITICAL</span>';
+        case 'HIGH':
+          return '<span class="px-2 py-0.5 rounded text-xs font-bold bg-orange-950 text-orange-300 border border-orange-700/80"><i class="fa-solid fa-triangle-exclamation mr-1"></i>HIGH</span>';
+        case 'MEDIUM':
+          return '<span class="px-2 py-0.5 rounded text-xs font-bold bg-yellow-950 text-yellow-300 border border-yellow-700/80"><i class="fa-solid fa-circle-exclamation mr-1"></i>MEDIUM</span>';
+        default:
+          return '<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-950 text-green-300 border border-green-700/80"><i class="fa-solid fa-info-circle mr-1"></i>LOW</span>';
+      }
+    }
+
+    // Trigger Demo Sample Audit
+    async function loadSampleReport() {
+      try {
+        showProgress("Loading pre-computed sample audit report...", 50);
+        const res = await fetch(`${API_BASE}/api/sample-report`);
+        if (!res.ok) throw new Error("Backend sample endpoint returned status " + res.status);
+        const data = await res.json();
+        setTimeout(() => {
+          hideProgress();
+          renderReport(data);
+        }, 400);
+      } catch (err) {
+        alert("Failed to connect to backend server at " + API_BASE + "\n" + err);
+        hideProgress();
+      }
+    }
+
+    // Start Live GitHub Audit
+    async function startAudit() {
+      const repoUrl = document.getElementById('repoUrl').value.trim();
+      if (!repoUrl) {
+        alert("Please enter a public GitHub repository URL or click 'Load Demo Sample'!");
+        return;
+      }
+      const enableRag = document.getElementById('enableRag').checked;
+      const enableMl = document.getElementById('enableMl').checked;
+
+      showProgress("Cloning repository and initializing pipeline...", 10);
+      try {
+        const res = await fetch(`${API_BASE}/api/audit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_url: repoUrl, enable_rag: enableRag, enable_ml: enableMl })
+        });
+        if (!res.ok) throw new Error("Failed to queue audit task");
+        const task = await res.json();
+        pollTask(task.task_id);
+      } catch (err) {
+        alert("Failed to start audit: " + err);
+        hideProgress();
+      }
+    }
+
+    // Upload ZIP Archive Audit
+    async function uploadZipAudit(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      document.getElementById('zipFileName').textContent = file.name;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      showProgress("Uploading and extracting ZIP archive...", 15);
+      try {
+        const res = await fetch(`${API_BASE}/api/audit`, {
+          method: 'POST',
+          body: formData
+        });
+        if (!res.ok) throw new Error("Failed to upload ZIP archive");
+        const task = await res.json();
+        pollTask(task.task_id);
+      } catch (err) {
+        alert("Failed to upload ZIP: " + err);
+        hideProgress();
+      }
+    }
+
+    // Poll Task Status
+    function pollTask(taskId) {
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/status/${taskId}`);
+          const task = await res.json();
+          showProgress(task.current_stage || "Processing...", task.progress || 0, task.message || "");
+
+          if (task.status === 'COMPLETED') {
+            clearInterval(interval);
+            setTimeout(() => {
+              hideProgress();
+              renderReport(task.result);
+            }, 600);
+          } else if (task.status === 'FAILED') {
+            clearInterval(interval);
+            alert("Audit failed: " + task.message);
+            hideProgress();
+          }
+        } catch (err) {
+          clearInterval(interval);
+          hideProgress();
+        }
+      }, 1000);
+    }
+
+    // UI Progress Utilities
+    function showProgress(stage, pct, msg = "") {
+      const panel = document.getElementById('progressPanel');
+      panel.classList.remove('hidden');
+      document.getElementById('progressStage').textContent = stage;
+      document.getElementById('progressPct').textContent = `${pct}%`;
+      document.getElementById('progressBar').style.width = `${pct}%`;
+      if (msg) document.getElementById('progressMsg').innerHTML = `<i class="fa-solid fa-terminal text-gray-500 mr-1"></i> ${msg}`;
+    }
+
+    function hideProgress() {
+      document.getElementById('progressPanel').classList.add('hidden');
+    }
+
+    // Render Full Report Dashboard
+    function renderReport(data) {
+      currentAuditReport = data;
+      const dashboard = document.getElementById('reportDashboard');
+      dashboard.classList.remove('hidden');
+
+      // 1. Health Score & Gauge Dial Animation
+      const score = Math.round(data.health_score || 0);
+      document.getElementById('healthScore').textContent = score;
+
+      const gauge = document.getElementById('gaugeProgress');
+      const circumference = 2 * Math.PI * 50; // r=50 -> 314.159
+      const offset = circumference - (score / 100) * circumference;
+      gauge.style.strokeDasharray = `${circumference}`;
+      gauge.style.strokeDashoffset = `${offset}`;
+
+      const verdictElem = document.getElementById('healthVerdict');
+      if (score >= 80) {
+        gauge.setAttribute('stroke', '#3FB950');
+        verdictElem.className = "text-xs font-semibold mt-3 px-3 py-1 rounded-full bg-green-950 text-green-400 border border-green-800";
+        verdictElem.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i> Low Risk • Production Ready';
+      } else if (score >= 60) {
+        gauge.setAttribute('stroke', '#D29922');
+        verdictElem.className = "text-xs font-semibold mt-3 px-3 py-1 rounded-full bg-yellow-950 text-yellow-400 border border-yellow-800";
+        verdictElem.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i> Moderate Risk • Remediation Needed';
+      } else {
+        gauge.setAttribute('stroke', '#F85149');
+        verdictElem.className = "text-xs font-semibold mt-3 px-3 py-1 rounded-full bg-red-950 text-red-400 border border-red-800";
+        verdictElem.innerHTML = '<i class="fa-solid fa-skull-crossbones mr-1"></i> High Risk • Critical Bugs Detected';
+      }
+
+      // 2. Metrics Breakdown
+      const summary = data.summary || {};
+      document.getElementById('totalFindings').textContent = (data.findings || []).length;
+      document.getElementById('badgeCrit').textContent = summary.critical_count || 0;
+      document.getElementById('badgeHigh').textContent = summary.high_count || 0;
+      document.getElementById('badgeMed').textContent = summary.medium_count || 0;
+      document.getElementById('badgeLow').textContent = summary.low_count || 0;
+
+      document.getElementById('scannedFiles').textContent = data.total_files || 0;
+      document.getElementById('parsedFunctions').textContent = data.total_functions || 0;
+      document.getElementById('scannedAt').textContent = data.scanned_at ? new Date(data.scanned_at).toLocaleString() : new Date().toLocaleTimeString();
+
+      // 3. Render Interactive Call Graph (Vis-Network)
+      renderDependencyGraph(data.dependency_graph);
+
+      // 4. Render Findings Table & Diffs
+      filterFindings();
+
+      // Scroll smoothly to dashboard
+      dashboard.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Render Vis-Network Graph Canvas
+    function renderDependencyGraph(graphData) {
+      const container = document.getElementById('networkGraphCanvas');
+      if (!graphData || !graphData.nodes || graphData.nodes.length === 0) {
+        container.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-500">No dependency graph nodes extracted.</div>';
+        return;
+      }
+
+      const nodes = new vis.DataSet();
+      const edges = new vis.DataSet();
+
+      graphData.nodes.forEach(n => {
+        let colorBg = '#21262D';
+        let colorBorder = '#30363D';
+        let shape = 'box';
+
+        if (n.type === 'function') {
+          shape = 'ellipse';
+          const sev = (n.severity || n.risk || '').toUpperCase();
+          if (sev === 'CRITICAL' || sev === 'HIGH' || n.risk_score >= 0.7) {
+            colorBg = '#F85149';
+            colorBorder = '#B62324';
+          } else if (sev === 'MEDIUM' || n.risk_score >= 0.4) {
+            colorBg = '#D29922';
+            colorBorder = '#9E6A03';
+          } else {
+            colorBg = '#238636';
+            colorBorder = '#2EA043';
+          }
+        }
+
+        nodes.add({
+          id: n.id,
+          label: n.label || n.id,
+          shape: shape,
+          color: {
+            background: colorBg,
+            border: colorBorder,
+            highlight: { background: '#58A6FF', border: '#1F6FEB' }
+          },
+          font: { color: '#FFFFFF', size: 12, face: 'monospace' },
+          margin: 10,
+          borderWidth: 2,
+          data: n
+        });
+      });
+
+      graphData.edges.forEach((e, idx) => {
+        edges.add({
+          id: `e-${idx}`,
+          from: e.source,
+          to: e.target,
+          arrows: 'to',
+          color: { color: e.call_type === 'import' ? '#6E7681' : '#58A6FF', highlight: '#79C0FF' },
+          dashes: e.call_type === 'import',
+          label: e.call_type === 'import' ? 'imports' : 'calls',
+          font: { color: '#8B949E', size: 9, align: 'middle' }
+        });
+      });
+
+      const data = { nodes: nodes, edges: edges };
+      const options = {
+        physics: {
+          stabilization: true,
+          barnesHut: { gravitationalConstant: -2200, springLength: 120 }
+        },
+        interaction: { hover: true, tooltipDelay: 100 }
+      };
+
+      if (networkGraphInstance) {
+        networkGraphInstance.destroy();
+      }
+      networkGraphInstance = new vis.Network(container, data, options);
+
+      // Node Click Handler: Blast Radius & Node Inspector
+      networkGraphInstance.on("click", function(params) {
+        if (params.nodes.length > 0) {
+          const selectedNodeId = params.nodes[0];
+          const nodeObj = nodes.get(selectedNodeId);
+          const raw = nodeObj.data || {};
+          
+          document.getElementById('selectedNodeInfo').innerHTML = 
+            `<strong>Selected:</strong> <code class="text-blue-400">${raw.id}</code> (${raw.type || 'function'}) • Risk: <span class="text-yellow-400 font-semibold">${raw.risk || raw.severity || 'Benign'}</span>`;
+          document.getElementById('selectedNodeStats').textContent = 
+            `File: ${raw.file_path || 'module'}`;
+        }
+      });
+    }
+
+    function fitGraphView() {
+      if (networkGraphInstance) networkGraphInstance.fit({ animation: true });
+    }
+
+    // Filter Buttons
+    function setFilter(type) {
+      activeFilter = type;
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.className = "filter-btn px-2.5 py-1 rounded text-gray-300 hover:text-white";
+      });
+      const activeBtn = document.getElementById(`filter${type}`);
+      if (activeBtn) {
+        activeBtn.className = "filter-btn px-2.5 py-1 rounded bg-blue-600 text-white font-medium";
+      }
+      filterFindings();
+    }
+
+    // Live Search & Filter Logic
+    function filterFindings() {
+      if (!currentAuditReport) return;
+      const query = (document.getElementById('findingSearch').value || '').toLowerCase();
+      const container = document.getElementById('findingsContainer');
+      const emptyState = document.getElementById('emptyFindingsState');
+      container.innerHTML = "";
+
+      const findings = currentAuditReport.findings || [];
+      const filtered = findings.filter(f => {
+        const matchesFilter = (activeFilter === 'ALL') || ((f.severity || '').toUpperCase() === activeFilter);
+        const matchesSearch = !query || 
+          (f.category || '').toLowerCase().includes(query) ||
+          (f.cwe_id || '').toLowerCase().includes(query) ||
+          (f.file_path || '').toLowerCase().includes(query) ||
+          (f.description || '').toLowerCase().includes(query);
+        return matchesFilter && matchesSearch;
+      });
+
+      if (filtered.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      }
+      emptyState.classList.add('hidden');
+
+      filtered.forEach((f, idx) => {
+        const card = document.createElement('div');
+        card.className = "border border-gray-800 rounded-lg p-5 bg-[#11161D] shadow-sm hover:border-gray-700 transition";
+        card.innerHTML = `
+          <div class="flex flex-col sm:flex-row justify-between items-start gap-2 mb-3">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                ${getSeverityBadge(f.severity)}
+                <span class="font-bold text-sm text-gray-100">${escapeHtml(f.category || 'Security Risk')}</span>
+                <span class="text-xs px-2 py-0.5 bg-blue-950 text-blue-400 rounded border border-blue-800/60 font-mono font-semibold">${escapeHtml(f.cwe_id || 'CWE')}</span>
+              </div>
+              <div class="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                <span><i class="fa-regular fa-file-code text-gray-500"></i> ${escapeHtml(f.file_path || '')}</span>
+                <span>•</span>
+                <span class="font-mono text-gray-300">Lines ${f.line_start || 1}–${f.line_end || 1}</span>
+              </div>
+            </div>
+            <div class="text-right flex items-center gap-2">
+              <span class="text-xs px-2 py-1 rounded bg-gray-900 border border-gray-800 text-gray-400 font-mono">
+                AI Confidence: <strong class="text-gray-200">${((f.confidence || 0.9) * 100).toFixed(0)}%</strong>
+              </span>
+            </div>
+          </div>
+
+          <p class="text-xs text-gray-300 leading-relaxed mb-4">${escapeHtml(f.description || '')}</p>
+
+          <!-- Split Diff Reviewer -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Left: Vulnerable Code -->
+            <div class="border border-red-900/50 rounded-md overflow-hidden bg-[#0A0505]">
+              <div class="bg-red-950/40 px-3 py-1.5 border-b border-red-900/50 flex justify-between items-center text-xs text-red-300 font-semibold">
+                <span><i class="fa-solid fa-xmark mr-1"></i> Original Vulnerable Code</span>
+                <span class="text-[10px] uppercase font-mono text-red-400">Risk Detected</span>
+              </div>
+              <pre class="p-3 text-xs text-red-200 font-mono overflow-x-auto whitespace-pre"><code>${escapeHtml(f.vulnerable_code || '')}</code></pre>
+            </div>
+
+            <!-- Right: Synthesized Grounded Fix -->
+            <div class="border border-green-900/50 rounded-md overflow-hidden bg-[#050A06]">
+              <div class="bg-green-950/40 px-3 py-1.5 border-b border-green-900/50 flex justify-between items-center text-xs text-green-300 font-semibold">
+                <span><i class="fa-solid fa-check mr-1"></i> Grounded Replacement Patch</span>
+                <button onclick="copyPatch(${idx})" id="copyBtn-${idx}" class="text-[10px] px-2 py-0.5 rounded bg-green-900/60 hover:bg-green-800 text-green-200 border border-green-700/60 transition flex items-center gap-1">
+                  <i class="fa-regular fa-copy"></i> Copy Patch
+                </button>
+              </div>
+              <pre class="p-3 text-xs text-green-200 font-mono overflow-x-auto whitespace-pre"><code id="patchCode-${idx}">${escapeHtml(f.fix_code || '')}</code></pre>
+            </div>
+          </div>
+
+          <!-- RAG Grounding Citation -->
+          ${f.explanation ? `
+          <div class="mt-3 p-2.5 rounded bg-gray-900/60 border border-gray-800 text-xs text-gray-400 flex items-start gap-2">
+            <i class="fa-solid fa-book-bookmark text-blue-400 mt-0.5"></i>
+            <div>
+              <strong class="text-gray-300">RAG Grounded Explanation:</strong> ${escapeHtml(f.explanation)}
+            </div>
+          </div>
+          ` : ''}
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 1-Click Copy Patch Code
+    function copyPatch(idx) {
+      const codeElem = document.getElementById(`patchCode-${idx}`);
+      if (!codeElem) return;
+      navigator.clipboard.writeText(codeElem.textContent).then(() => {
+        const btn = document.getElementById(`copyBtn-${idx}`);
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
+        setTimeout(() => {
+          btn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy Patch';
+        }, 2000);
+      });
+    }
+
+    // Export Audit JSON
+    function downloadJsonReport() {
+      if (!currentAuditReport) return;
+      const jsonStr = JSON.stringify(currentAuditReport, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-report-${currentAuditReport.audit_id || 'result'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Utility: HTML escaping
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>
