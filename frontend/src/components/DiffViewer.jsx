@@ -96,10 +96,26 @@ function computeDiff(oldCode = '', newCode = '', baseLine = 1) {
         }
         k++;
       }
-      const maxLen = Math.max(delGroup.length, addGroup.length);
+
+      // Isolate top-level added comments from actual replacement code to avoid misaligned token diffs
+      const isComment = (str) => /^\s*(?:#|\/\/|\/\*|\*)/.test(str || '');
+      const cleanAdds = [];
+      for (const a of addGroup) {
+        if (isComment(a.newLine) && !delGroup.some((d) => isComment(d.oldLine))) {
+          rows.push({
+            type: 'added',
+            left: null,
+            right: { text: a.newLine, lineNum: 1 + a.newIndex, type: 'added' },
+          });
+        } else {
+          cleanAdds.push(a);
+        }
+      }
+
+      const maxLen = Math.max(delGroup.length, cleanAdds.length);
       for (let idx = 0; idx < maxLen; idx++) {
         const d = delGroup[idx];
-        const a = addGroup[idx];
+        const a = cleanAdds[idx];
         rows.push({
           type: d && a ? 'modified' : d ? 'deleted' : 'added',
           left: d ? { text: d.oldLine, lineNum: baseLine + d.oldIndex, type: 'deleted' } : null,
@@ -226,6 +242,9 @@ export default function DiffViewer({
   }, [rows, focusChanges]);
 
   const hasChanges = delCount > 0 || addCount > 0;
+  const unchangedCount = rows.filter((r) => r.type === 'unchanged').length;
+  const hasFoldableLines = unchangedCount >= 4;
+  const canScrollToChange = firstChangedIndex > 3 || rows.length > 8;
 
   return (
     <div className="mt-3 border border-[#30363D] rounded-xl overflow-hidden bg-[#0D1117] shadow-lg">
@@ -251,10 +270,10 @@ export default function DiffViewer({
                 </span>
               )}
 
-              {firstChangedIndex !== -1 && (
+              {firstChangedIndex !== -1 && canScrollToChange && (
                 <button
                   onClick={jumpToFirstChange}
-                  title="Auto-scroll to the first modified line"
+                  title="Auto-scroll down to the first modified line"
                   className="ml-1 px-2 py-0.5 rounded bg-blue-950/70 hover:bg-blue-900 text-blue-300 border border-blue-800/60 transition flex items-center gap-1 text-[11px]"
                 >
                   <Target className="w-3 h-3 text-blue-400" />
@@ -269,19 +288,27 @@ export default function DiffViewer({
 
         {/* Right: View Mode & Copy Controls */}
         <div className="flex items-center gap-2">
-          {/* Focus Mode (Changes only vs All lines) */}
-          <button
-            onClick={() => setFocusChanges(!focusChanges)}
-            className={`px-2 py-1 rounded text-[11px] font-mono transition flex items-center gap-1 border ${
-              focusChanges
-                ? 'bg-amber-950/70 text-amber-300 border-amber-800/80 font-bold'
-                : 'bg-[#21262D] text-gray-300 hover:text-white border-gray-700'
-            }`}
-            title={focusChanges ? 'Showing only changed lines' : 'Show only changed lines'}
-          >
-            <Zap className={`w-3 h-3 ${focusChanges ? 'text-amber-400 fill-amber-400' : 'text-gray-400'}`} />
-            {focusChanges ? 'Focus: Changes Only' : 'Show All Lines'}
-          </button>
+          {/* Focus Mode (Changes only vs All lines) - Only displayed when there are surrounding unchanged lines to fold */}
+          {hasFoldableLines && (
+            <button
+              onClick={() => setFocusChanges(!focusChanges)}
+              className={`px-2 py-1 rounded text-[11px] font-mono transition flex items-center gap-1 border ${
+                focusChanges
+                  ? 'bg-amber-950/70 text-amber-300 border-amber-800/80 font-bold'
+                  : 'bg-[#21262D] text-gray-300 hover:text-white border-gray-700'
+              }`}
+              title={
+                focusChanges
+                  ? 'Folded unchanged lines; click to show full code'
+                  : 'Collapse unchanged lines and isolate diffs'
+              }
+            >
+              <Zap
+                className={`w-3 h-3 ${focusChanges ? 'text-amber-400 fill-amber-400' : 'text-gray-400'}`}
+              />
+              {focusChanges ? 'Focus: Changes Only' : 'Show All Lines'}
+            </button>
+          )}
 
           {/* View Mode Toggle (Split vs Unified) */}
           <div className="flex items-center bg-[#090D13] p-0.5 rounded border border-gray-700 text-[11px]">

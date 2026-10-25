@@ -522,8 +522,8 @@ def scan_vulnerabilities_node(state: AuditAgentState) -> Dict[str, Any]:
         },
         {
             "category": "OS Command Injection",
-            # Detects os.system with dynamic arguments or subprocess with shell=True
-            "regex": r"(?:os\.system\s*\(\s*(?:f[\"'].*?\{|.*?%|.*?\+)|subprocess\.(?:Popen|call|run)\s*\([^)]*shell\s*=\s*True)",
+            # Detects os.system and os.popen with dynamic arguments or subprocess with shell=True
+            "regex": r"(?:os\.(?:system|popen)\s*\(\s*(?:f[\"'].*?\{|.*?%|.*?\+)|subprocess\.(?:Popen|call|run)\s*\([^)]*shell\s*=\s*True)",
             "severity": SeverityLevel.CRITICAL,
             "base_conf": 0.92
         },
@@ -874,42 +874,54 @@ def _generate_contextual_fix(
             return f"import json\n# Grounded Fix ({cwe_id}): Avoid pickle; use secure JSON or Protocol Buffers\n" + replaced
 
     elif category == "OS Command Injection":
-        if "os.system" in code:
+        if "os.system" in code or "os.popen" in code:
+            if "ping" in code:
+                match = re.search(r'ping\s+(?:-[a-zA-Z0-9]+\s+[a-zA-Z0-9]+\s+)*\{([a-zA-Z0-9_]+)\}', code)
+                var = match.group(1) if match else "ip"
+                return (
+                    f"import subprocess\n"
+                    f"# Grounded Fix ({cwe_id}): Avoid shell execution; pass argument list to subprocess.run\n"
+                    f"def run_ping({var}):\n"
+                    f"    res = subprocess.run(['ping', '-c', '1', {var}], capture_output=True, text=True)\n"
+                    f"    return res.stdout"
+                )
             return (
                 f"import subprocess\n"
-                f"# Grounded Fix ({cwe_id}): Avoid os.system; execute subprocess with structured arguments without shell=True\n"
+                f"# Grounded Fix ({cwe_id}): Avoid os.system/popen; execute subprocess with structured arguments without shell=True\n"
                 f"# Example: subprocess.run(['command', arg1, arg2], check=True, shell=False)"
             )
 
     elif category == "SQL Injection":
-        placeholder = "?" if ("sqlite" in code.lower() or "sqlite3" in code.lower()) else "%s"
+        placeholder = "?" if ("sqlite" in code.lower() or "sqlite3" in code.lower() or "db" in code.lower() or ":memory:" in code.lower()) else "%s"
         code_fixed = code
 
-        # 1. Direct execution: cursor.execute(f"SELECT ...")
+        # 1. Direct execution: (db|cursor|conn|session).execute(f"SELECT ...")
         def replace_exec(match):
-            sql_str = match.group(1)
-            vars_found = re.findall(r"\{([a-zA-Z0-9_\.\[\]]+)\}", sql_str)
-            if not vars_found:
-                return match.group(0)
-            clean_sql = re.sub(r"['\"]?\{[a-zA-Z0-9_\.\[\]]+\}['\"]?", placeholder, sql_str)
-            params_tuple = f"({', '.join(vars_found)}{',' if len(vars_found) == 1 else ''})"
-            return f'cursor.execute("{clean_sql}", {params_tuple})'
-
-        code_fixed = re.sub(r'cursor\.execute\s*\(\s*f["\'](.*?)["\']\s*\)', replace_exec, code_fixed)
-
-        # 2. Query variable assignment: query = f"SELECT ..." followed by cursor.execute(query)
-        def replace_query_var(match):
-            var_name = match.group(1)
+            caller = match.group(1)
             sql_str = match.group(2)
             vars_found = re.findall(r"\{([a-zA-Z0-9_\.\[\]]+)\}", sql_str)
             if not vars_found:
                 return match.group(0)
             clean_sql = re.sub(r"['\"]?\{[a-zA-Z0-9_\.\[\]]+\}['\"]?", placeholder, sql_str)
             params_tuple = f"({', '.join(vars_found)}{',' if len(vars_found) == 1 else ''})"
-            return f'{var_name} = "{clean_sql}"\n    # Grounded Fix ({cwe_id}): Parameterized query bindings\n    cursor.execute({var_name}, {params_tuple})'
+            return f'{caller}.execute("{clean_sql}", {params_tuple})'
+
+        code_fixed = re.sub(r'([a-zA-Z0-9_]+)\.execute\s*\(\s*f["\'](.*?)["\']\s*\)', replace_exec, code_fixed)
+
+        # 2. Query variable assignment: query = f"SELECT ..." followed by (caller).execute(query)
+        def replace_query_var(match):
+            var_name = match.group(1)
+            sql_str = match.group(2)
+            caller = match.group(3)
+            vars_found = re.findall(r"\{([a-zA-Z0-9_\.\[\]]+)\}", sql_str)
+            if not vars_found:
+                return match.group(0)
+            clean_sql = re.sub(r"['\"]?\{[a-zA-Z0-9_\.\[\]]+\}['\"]?", placeholder, sql_str)
+            params_tuple = f"({', '.join(vars_found)}{',' if len(vars_found) == 1 else ''})"
+            return f'{var_name} = "{clean_sql}"\n    # Grounded Fix ({cwe_id}): Parameterized query bindings\n    {caller}.execute({var_name}, {params_tuple})'
 
         code_fixed = re.sub(
-            r'([a-zA-Z0-9_]+)\s*=\s*f["\'](.*?)["\']\s*\n\s*cursor\.execute\(\1\)',
+            r'([a-zA-Z0-9_]+)\s*=\s*f["\'](.*?)["\']\s*\n\s*([a-zA-Z0-9_]+)\.execute\(\1\)',
             replace_query_var,
             code_fixed
         )

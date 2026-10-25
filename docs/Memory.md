@@ -42,6 +42,17 @@
 
 ## Detailed Progress Log
 
+### [2026-10-25] — Context-Aware Diff Controls & SQLite / os.popen Precision Fixes
+- **Context-Aware DiffViewer Controls (`frontend/src/components/DiffViewer.jsx`)**:
+  - Previously, "Jump to Change" and "Focus: Changes Only" were unconditionally rendered even on 2-line snippets where all lines were modified, causing confusion because clicking them had nothing to scroll or fold.
+  - Added smart heuristics:
+    - `Jump to Change`: Only displayed when `rows.length > 8` and `firstChangedIndex > 3` (when scrolling is actually necessary).
+    - `Focus: Changes Only`: Only displayed when `unchangedCount >= 4` (when there are actual unchanged boilerplate lines to fold).
+  - Isolated added comment rows (`# Grounded Fix...`) so they render as standalone added rows rather than being cross-paired with function signatures (`def lookup...`).
+- **Precision Detection & Fix Synthesis (`agent/nodes.py`)**:
+  - Extended SQL injection parameterized fix synthesis to handle SQLite and custom database handles (`db.execute`, `conn.execute`, `session.execute`) with `?` placeholders.
+  - Added `os.popen` to OS Command Injection detection regex and structured `subprocess.run` patch synthesis.
+
 ### [2026-10-25] — Python Symbol / NameError Verifier & Map Suppression for Raw Code
 - **Python Symbol & NameError Validation in `agent/nodes.py`**:
   - Previously, `priint("hello")` was syntactically valid in Python grammar (`ast.parse` succeeds) and went uncaught because grammar parsers do not evaluate runtime identifiers.
