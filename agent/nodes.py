@@ -111,11 +111,15 @@ def check_polyglot_syntax(file_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         except Exception:
             pass
 
-    # 3. Structural Bracket & Brace Matching (All Languages)
+    # 3. Structural Bracket & Brace Matching (Skip for HTML/markup templates)
+    if ext in (".html", ".htm") or lang == "html":
+        return errors
+
     stack = []
     pairs = {')': '(', '}': '{', ']': '['}
     for idx, line in enumerate(lines, 1):
         clean_line = re.sub(r'//.*$|/\*.*?\*/', '', line)
+        clean_line = re.sub(r'/[^/\n\r]+/[gimsuy]*', '""', clean_line)
         clean_line = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', clean_line)
         for char in clean_line:
             if char in '({[':
@@ -480,11 +484,11 @@ def scan_vulnerabilities_node(state: AuditAgentState) -> Dict[str, Any]:
         },
         {
             "category": "Code Injection",
-            # Dangerous dynamic code evaluation via eval(), exec(), new Function()
+            # Dangerous dynamic code evaluation via eval(), exec(), new Function(), or string-based setTimeout/setInterval
             "regex": (
                 r"(?:\b(?:eval|exec)\s*\([^)]+\)|"
                 r"\bnew\s+Function\s*\([^)]+\)|"
-                r"(?:setTimeout|setInterval)\s*\(\s*(?:['\"`].*?\+|[a-zA-Z0-9_]+)\s*,)"
+                r"(?:setTimeout|setInterval)\s*\(\s*(?:['\"`].*?\+|['\"`][^'\"`]+['\"`]\s*,))"
             ),
             "severity": SeverityLevel.CRITICAL,
             "base_conf": 0.95
@@ -643,7 +647,7 @@ FALLBACK_CWE_MAP = {
         "owasp_category": "A03:2021 - Injection",
         "description": "The application receives untrusted input and passes it to dynamic evaluation functions (e.g., Python eval, exec, JavaScript eval), allowing arbitrary code execution in the application context.",
         "mitigation": "Never use eval() or exec() with untrusted user input. Use safe data parsing libraries (such as json.loads or JSON.parse).",
-        "example_fix": "const data = JSON.parse(userInput);"
+        "example_fix": "// JavaScript: JSON.parse(userInput) | Python: json.loads(user_input)"
     },
     "Server-Side Request Forgery (SSRF)": {
         "cwe_id": "CWE-918",
@@ -738,10 +742,24 @@ def rag_grounding_node(state: AuditAgentState) -> Dict[str, Any]:
     }
 
 
-def _generate_contextual_fix(category: str, code: str, cwe: Dict[str, Any], matched_var: Optional[str] = None) -> str:
+def _generate_contextual_fix(
+    category: str,
+    code: str,
+    cwe: Dict[str, Any],
+    matched_var: Optional[str] = None,
+    language: Optional[str] = None,
+    file_path: Optional[str] = None
+) -> str:
     """Generates a contextual grounded replacement code diff instead of generic templates."""
     cwe_id = cwe.get("cwe_id", "CWE-SEC")
     fix_suggestion = cwe.get("example_fix", "# Apply secure coding pattern")
+
+    ext = os.path.splitext(file_path or "")[1].lower()
+    is_js_or_html = (
+        language in ("javascript", "typescript", "html") or
+        ext in (".js", ".jsx", ".ts", ".tsx", ".html", ".htm")
+    )
+    comment_char = "//" if (is_js_or_html or ext in (".java", ".c", ".cpp")) else "#"
 
     if category == "Weak Cryptography":
         if "hashlib.md5" in code:
@@ -854,18 +872,40 @@ def _generate_contextual_fix(category: str, code: str, cwe: Dict[str, Any], matc
 
     elif category == "Cross-site Scripting (XSS)":
         if ".innerHTML" in code:
+            if any(tag in code for tag in ("<tr", "<td", "<div", "<span", "<table", "<p", "</")):
+                return (
+                    f"// Grounded Fix ({cwe_id}): Use DOMPurify.sanitize() or document.createElement() to prevent XSS\n"
+                    f"// Example: element.innerHTML = DOMPurify.sanitize(htmlMarkup);\n"
+                    f"{code}"
+                )
             fixed = code.replace(".innerHTML", ".textContent")
             return f"// Grounded Fix ({cwe_id}): Use textContent instead of innerHTML to prevent script execution\n" + fixed
         elif ".outerHTML" in code:
-            fixed = code.replace(".outerHTML", ".textContent")
-            return f"// Grounded Fix ({cwe_id}): Avoid outerHTML injection; use textContent\n" + fixed
+            return (
+                f"// Grounded Fix ({cwe_id}): Sanitize HTML markup or manipulate DOM nodes directly\n"
+                f"// Example: element.outerHTML = DOMPurify.sanitize(markup);\n"
+                f"{code}"
+            )
         elif "document.write" in code:
             return f"// Grounded Fix ({cwe_id}): Avoid document.write(); manipulate textContent on target element instead\n" + code
 
     elif category == "Code Injection":
-        if "eval(" in code:
-            fixed = code.replace("eval(", "JSON.parse(" if ("function" in code or "const" in code or "let" in code) else "json.loads(")
-            return f"# Grounded Fix ({cwe_id}): Avoid dynamic eval(); parse data with structured JSON\n" + fixed
+        if is_js_or_html:
+            if "eval(" in code:
+                fixed = code.replace("eval(", "JSON.parse(")
+                return f"// Grounded Fix ({cwe_id}): Avoid dynamic eval(); parse data with structured JSON.parse()\n" + fixed
+            return (
+                f"// Grounded Fix ({cwe_id}): Avoid dynamic code execution; use structured JSON parsing or callback functions\n"
+                f"const parsedData = JSON.parse(userInput);"
+            )
+        else:
+            if "eval(" in code:
+                fixed = code.replace("eval(", "json.loads(")
+                return f"# Grounded Fix ({cwe_id}): Avoid dynamic eval(); parse data with structured json.loads()\n" + fixed
+            return (
+                f"# Grounded Fix ({cwe_id}): Avoid dynamic execution; parse structured data safely\n"
+                f"import json\nresult = json.loads(user_input)"
+            )
 
     elif category == "Buffer Overflow":
         if "strcpy(" in code:
@@ -884,9 +924,9 @@ def _generate_contextual_fix(category: str, code: str, cwe: Dict[str, Any], matc
         if "(" in code and ")" not in code and ":" in code and not stripped.startswith(("#", "//")):
             fixed = re.sub(r":\s*$", "):", code)
             return f"# Grounded Fix ({cwe_id}): Corrected syntax violation (closed missing parenthesis)\n" + fixed
-        return f"// Grounded Fix ({cwe_id}): Review and correct syntax\n" + code
+        return f"{comment_char} Grounded Fix ({cwe_id}): Review and correct syntax\n" + code
 
-    return f"# Grounded Fix ({cwe_id}):\n" + fix_suggestion
+    return f"{comment_char} Grounded Fix ({cwe_id}):\n" + fix_suggestion
 
 
 def synthesize_fixes_node(state: AuditAgentState) -> Dict[str, Any]:
@@ -908,6 +948,7 @@ def synthesize_fixes_node(state: AuditAgentState) -> Dict[str, Any]:
         original_code = chunk["code"]
         matched_var = item.get("matched_var")
         lang = chunk.get("language")
+        file_path = chunk.get("file_path", "")
 
         # Create cache key to reuse fixes for identical repeated patterns
         cache_key = (category, cwe.get("cwe_id"), original_code[:120].strip())
@@ -915,14 +956,14 @@ def synthesize_fixes_node(state: AuditAgentState) -> Dict[str, Any]:
             return item_idx, item, remediation_cache[cache_key]
 
         fix_code = None
-        # Call AI for top 12 findings or if total findings <= 15
-        if item_idx <= 12:
+        # Call AI for top 30 findings (high-speed generation with Gemini 2.5 Flash)
+        if item_idx <= 30:
             try:
                 fix_code = generate_ai_remediation(
                     category=category,
                     cwe_id=cwe["cwe_id"],
                     vulnerable_code=original_code,
-                    file_path=chunk["file_path"],
+                    file_path=file_path,
                     error_details=cwe.get("description"),
                     language=lang
                 )
@@ -931,7 +972,14 @@ def synthesize_fixes_node(state: AuditAgentState) -> Dict[str, Any]:
 
         # Fallback to instantaneous deterministic AST patch generator
         if not fix_code:
-            fix_code = _generate_contextual_fix(category, original_code, cwe, matched_var)
+            fix_code = _generate_contextual_fix(
+                category=category,
+                code=original_code,
+                cwe=cwe,
+                matched_var=matched_var,
+                language=lang,
+                file_path=file_path
+            )
 
         remediation_cache[cache_key] = fix_code
         return item_idx, item, fix_code

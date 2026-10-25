@@ -52,7 +52,7 @@ def generate_ai_remediation(
     target_lang = language
     if not target_lang:
         ext = os.path.splitext(file_path)[1].lower()
-        if ext in (".js", ".jsx", ".mjs", ".cjs"):
+        if ext in (".js", ".jsx", ".mjs", ".cjs", ".html", ".htm"):
             target_lang = "javascript"
         elif ext in (".ts", ".tsx"):
             target_lang = "typescript"
@@ -64,6 +64,8 @@ def generate_ai_remediation(
             target_lang = "java"
         else:
             target_lang = "python"
+
+    comment_char = "//" if target_lang in ("javascript", "typescript", "java", "c", "cpp") else "#"
 
     # 2. Build prompt
     prompt = (
@@ -104,10 +106,13 @@ def generate_ai_remediation(
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
                         "temperature": 0.1,
-                        "maxOutputTokens": 1024
+                        "maxOutputTokens": 2048,
+                        "thinkingConfig": {
+                            "thinkingBudget": 0
+                        }
                     }
                 }
-                resp = requests.post(url, json=payload, timeout=6)
+                resp = requests.post(url, json=payload, timeout=12)
                 if resp.status_code == 200:
                     data = resp.json()
                     candidates = data.get("candidates", [])
@@ -115,7 +120,7 @@ def generate_ai_remediation(
                         parts = candidates[0].get("content", {}).get("parts", [])
                         if parts and "text" in parts[0]:
                             code_text = _clean_markdown_code_fences(parts[0]["text"])
-                            return f"# Grounded Fix ({cwe_id}) [AI-Remediated]:\n" + code_text
+                            return f"{comment_char} Grounded Fix ({cwe_id}) [AI-Remediated]:\n" + code_text
             except Exception as e:
                 logger.debug(f"Gemini generation failed on {model}: {e}")
 
