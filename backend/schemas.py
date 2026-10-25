@@ -26,9 +26,13 @@ class AuditStatus(str, Enum):
 # --- Request Schemas ---
 
 class AuditRequest(BaseModel):
-    """Payload to initiate an audit via GitHub URL."""
+    """Payload to initiate an audit via GitHub URL or Raw Code."""
     repo_url: Optional[str] = Field(None, description="Public GitHub repository URL")
     branch: Optional[str] = Field("main", description="Target branch to clone (default: main)")
+    raw_code: Optional[str] = Field(None, description="Raw source code string to audit")
+    filename: Optional[str] = Field("snippet.py", description="Filename for raw code snippet")
+    enable_rag: Optional[bool] = Field(True, description="Enable FAISS RAG grounding")
+    enable_ml: Optional[bool] = Field(True, description="Enable CodeBERT classification")
 
 
 # --- Graph Schemas (For AST Parser & React Flow) ---

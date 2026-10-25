@@ -157,11 +157,8 @@ export default function DependencyFlow({ graph }) {
         <div>
           <h2 className="text-base font-bold text-gray-100 flex items-center gap-2">
             <Network className="w-5 h-5 text-blue-400" />
-            Interactive Architectural Dependency Graph (React Flow)
+            Interactive Architectural Dependency Graph
           </h2>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Rendered via NetworkX graph pipeline. Drag, zoom, and click nodes to explore invocation paths &amp; blast radius.
-          </p>
         </div>
 
         {/* Legend */}
@@ -173,7 +170,7 @@ export default function DependencyFlow({ graph }) {
             <span className="w-2.5 h-2.5 rounded-full bg-yellow-500"></span> Medium Risk
           </span>
           <span className="flex items-center gap-1.5 text-gray-300">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span> Benign Function
+            <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span> Secure Function
           </span>
           <span className="flex items-center gap-1.5 text-gray-300">
             <span className="w-2.5 h-2.5 rounded bg-gray-600"></span> Source File
@@ -191,7 +188,7 @@ export default function DependencyFlow({ graph }) {
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
             fitView
-            attributionPosition="bottom-right"
+            proOptions={{ hideAttribution: true }}
           >
             <MiniMap
               nodeColor={(n) => {

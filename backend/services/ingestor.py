@@ -8,6 +8,7 @@ Codebase ingestion service:
 """
 
 import os
+import re
 import shutil
 import zipfile
 import subprocess
@@ -18,20 +19,121 @@ from typing import List, Dict, Optional, Tuple
 
 SUPPORTED_EXTENSIONS = {
     ".py": "python",
+    ".pyw": "python",
     ".c": "c",
     ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
     ".h": "c_header",
     ".hpp": "cpp_header",
+    ".hxx": "cpp_header",
     ".js": "javascript",
     ".jsx": "javascript_react",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
     ".ts": "typescript",
-    ".tsx": "typescript_react"
+    ".tsx": "typescript_react",
+    ".java": "java",
+    ".go": "go",
+    ".rs": "rust",
+    ".php": "php",
+    ".rb": "ruby",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".sql": "sql",
+    ".html": "html",
+    ".htm": "html",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".env": "env",
+    ".toml": "toml"
 }
 
 IGNORE_DIRS = {
     ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
     ".pytest_cache", "dist", "build", ".idea", ".vscode"
 }
+
+
+def detect_code_language(code: str, fallback_filename: str = "snippet.py") -> Tuple[str, str]:
+    """
+    Infers the programming language and proper extension from raw code heuristics.
+    Returns: (detected_filename, language)
+    """
+    if not code or not code.strip():
+        ext = Path(fallback_filename).suffix.lower()
+        return fallback_filename, SUPPORTED_EXTENSIONS.get(ext, "python")
+
+    text = code.strip()
+
+    # If the user passed a specific non-default filename like "auth.go" or "main.cpp", preserve it
+    user_ext = Path(fallback_filename).suffix.lower()
+    if user_ext and user_ext != ".py" and user_ext in SUPPORTED_EXTENSIONS:
+        return fallback_filename, SUPPORTED_EXTENSIONS[user_ext]
+
+    # Heuristic scoring
+    js_markers = [
+        r"\b(?:const|let|var)\s+[a-zA-Z0-9_]+\s*=",
+        r"\bfunction\s+[a-zA-Z0-9_]+\s*\(",
+        r"\bconsole\.(?:log|error|warn)\b",
+        r"\bdocument\.(?:getElementById|querySelector|write|createElement)\b",
+        r"\bwindow\.(?:location|localStorage|sessionStorage)\b",
+        r"\b(?:require\s*\(|module\.exports\b|export\s+(?:default|const|let|function))",
+        r"\.innerHTML\b",
+        r"\.textContent\b",
+        r"=>\s*\{?",
+    ]
+    py_markers = [
+        r"^\s*def\s+[a-zA-Z0-9_]+\s*\(.*?\)\s*:",
+        r"^\s*import\s+[a-zA-Z0-9_]+",
+        r"^\s*from\s+[a-zA-Z0-9_.]+\s+import\b",
+        r"^\s*class\s+[a-zA-Z0-9_]+(?:\(.*?\))?\s*:",
+        r"\bprint\s*\(",
+        r"\belif\b",
+        r"\bif\s+__name__\s*==\s*['\"]__main__['\"]:",
+        r"\bself\.[a-zA-Z0-9_]+",
+    ]
+    c_markers = [
+        r"#\s*include\s*[<\"].*?[>\"]",
+        r"\bint\s+main\s*\(",
+        r"\bprintf\s*\(",
+        r"\bstd::[a-zA-Z0-9_]+",
+        r"\bmalloc\s*\(",
+        r"\bcout\s*<<",
+    ]
+    java_markers = [
+        r"\bpublic\s+class\s+[a-zA-Z0-9_]+",
+        r"\bSystem\.out\.print(?:ln)?\s*\(",
+        r"\bpublic\s+static\s+void\s+main\b",
+        r"\bpackage\s+[a-zA-Z0-9_.]+;",
+    ]
+
+    js_score = sum(1 for m in js_markers if re.search(m, text, re.MULTILINE))
+    py_score = sum(1 for m in py_markers if re.search(m, text, re.MULTILINE))
+    c_score = sum(1 for m in c_markers if re.search(m, text, re.MULTILINE))
+    java_score = sum(1 for m in java_markers if re.search(m, text, re.MULTILINE))
+
+    # Highest score wins; fallback to python if ambiguous
+    scores = [
+        ("javascript", ".js", js_score),
+        ("python", ".py", py_score),
+        ("cpp", ".cpp", c_score),
+        ("java", ".java", java_score)
+    ]
+    scores.sort(key=lambda x: x[2], reverse=True)
+
+    best_lang, best_ext, top_score = scores[0]
+    if top_score > 0 and top_score > py_score:
+        stem = Path(fallback_filename).stem
+        return f"{stem}{best_ext}", best_lang
+    elif py_score > 0:
+        stem = Path(fallback_filename).stem
+        return f"{stem}.py", "python"
+
+    # Default to user's fallback
+    ext = Path(fallback_filename).suffix.lower() or ".py"
+    return fallback_filename, SUPPORTED_EXTENSIONS.get(ext, "python")
 
 
 class IngestionError(Exception):
@@ -152,8 +254,8 @@ class CodebaseIngestor:
                             continue
 
                         rel_path = str(full_path.relative_to(root_path)).replace("\\", "/")
-                        with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                            content = f.read()
+                        with open(full_path, "r", encoding="utf-8-sig", errors="replace") as f:
+                            content = f.read().lstrip("\ufeff")
 
                         collected_files.append({
                             "path": str(full_path),

@@ -14,9 +14,12 @@ class AuditAgentState(TypedDict, total=False):
     raw_files: List[Dict[str, Any]]
     function_chunks: List[Dict[str, Any]]
     scanned_vulnerabilities: List[Dict[str, Any]]
+    grounded_evidence: List[Dict[str, Any]]
     grounded_findings: List[Finding]
     dependency_graph: DependencyGraph
     health_score: int
     audit_result: Optional[AuditResult]
+    enable_rag: bool
+    enable_ml: bool
     current_stage: str
     errors: List[str]

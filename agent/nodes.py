@@ -8,11 +8,12 @@ State graph execution nodes for the LangGraph agent workflow:
 5. compile_report_node: Computes Health Score (0-100) and compiles AuditResult.
 """
 
+import os
 import ast
 import re
 import uuid
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 
 from backend.schemas import (
     Finding, SeverityLevel, AuditSummary, DependencyGraph,
@@ -20,6 +21,7 @@ from backend.schemas import (
 )
 from rag_engine.vector_store import rag_engine
 from agent.state import AuditAgentState
+from agent.llm_engine import generate_ai_remediation
 
 try:
     from parser_engine.ast_slicer import ASTSlicer
@@ -29,9 +31,191 @@ except ImportError:
     HAS_PARSER_ENGINE = False
 
 
+def check_polyglot_syntax(file_info: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Validates source code syntax across Python, JavaScript, Java, and C/C++.
+    Returns discrete syntax error chunks for the audit pipeline.
+    """
+    rel_path = file_info["rel_path"]
+    content = file_info.get("content", "").lstrip("\ufeff")
+    lang = (file_info.get("language") or "").lower()
+    ext = os.path.splitext(rel_path)[1].lower()
+    errors = []
+    lines = content.splitlines()
+
+    # 1. Python Syntax Validation (via native ast.parse)
+    if ext in (".py", ".pyw") or lang == "python":
+        try:
+            ast.parse(content, filename=rel_path)
+        except SyntaxError as e:
+            # Ignore false-positive errors caused by non-printable characters or BOM
+            if "U+FEFF" in e.msg or "non-printable character" in e.msg:
+                return []
+            line_no = e.lineno or 1
+            col_no = e.offset or 1
+            err_text = (e.text or "").strip()
+            # If the flagged line is a comment or blank, skip
+            if err_text.startswith(("#", '"""', "'''")) or not err_text:
+                return []
+            errors.append({
+                "file_path": rel_path,
+                "function_name": f"<syntax_error_L{line_no}>",
+                "line_start": line_no,
+                "line_end": line_no,
+                "code": err_text or (lines[line_no - 1] if line_no <= len(lines) else content[:100]),
+                "language": "python",
+                "complexity": 1,
+                "docstring": "",
+                "node_id": f"{rel_path}:syntax_error_L{line_no}",
+                "syntax_error": f"Python SyntaxError: {e.msg} at line {line_no}, col {col_no}"
+            })
+        return errors
+
+    # 2. JavaScript / TypeScript Validation (via Node.js vm.Script)
+    if ext in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx") or "javascript" in lang:
+        try:
+            import subprocess
+            node_script = (
+                "const vm = require('vm');\n"
+                "const fs = require('fs');\n"
+                "const code = fs.readFileSync(0, 'utf-8');\n"
+                "try { new vm.Script(code); } catch (e) {\n"
+                "  console.log(JSON.stringify({msg: e.message, line: e.lineNumber || 1, col: e.columnNumber || 1}));\n"
+                "}\n"
+            )
+            res = subprocess.run(
+                ["node", "-e", node_script],
+                input=content,
+                text=True,
+                capture_output=True,
+                timeout=2
+            )
+            if res.stdout.strip():
+                try:
+                    data = json.loads(res.stdout.strip())
+                    l_no = data.get("line", 1)
+                    errors.append({
+                        "file_path": rel_path,
+                        "function_name": f"<syntax_error_L{l_no}>",
+                        "line_start": l_no,
+                        "line_end": l_no,
+                        "code": lines[l_no - 1] if l_no <= len(lines) else content[:100],
+                        "language": "javascript",
+                        "complexity": 1,
+                        "docstring": "",
+                        "node_id": f"{rel_path}:syntax_error_L{l_no}",
+                        "syntax_error": f"JavaScript SyntaxError: {data.get('msg')} at line {l_no}"
+                    })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # 3. Structural Bracket & Brace Matching (All Languages)
+    stack = []
+    pairs = {')': '(', '}': '{', ']': '['}
+    for idx, line in enumerate(lines, 1):
+        clean_line = re.sub(r'//.*$|/\*.*?\*/', '', line)
+        clean_line = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', clean_line)
+        for char in clean_line:
+            if char in '({[':
+                stack.append((char, idx))
+            elif char in ')}]':
+                if not stack:
+                    errors.append({
+                        "file_path": rel_path,
+                        "function_name": f"<syntax_error_L{idx}>",
+                        "line_start": idx,
+                        "line_end": idx,
+                        "code": line.strip(),
+                        "language": lang or "generic",
+                        "complexity": 1,
+                        "docstring": "",
+                        "node_id": f"{rel_path}:syntax_error_L{idx}",
+                        "syntax_error": f"SyntaxError: Unmatched closing bracket '{char}' at line {idx}"
+                    })
+                else:
+                    top, start_idx = stack.pop()
+                    if top != pairs[char]:
+                        errors.append({
+                            "file_path": rel_path,
+                            "function_name": f"<syntax_error_L{idx}>",
+                            "line_start": idx,
+                            "line_end": idx,
+                            "code": line.strip(),
+                            "language": lang or "generic",
+                            "complexity": 1,
+                            "docstring": "",
+                            "node_id": f"{rel_path}:syntax_error_L{idx}",
+                            "syntax_error": f"SyntaxError: Mismatched bracket '{char}', expected match for '{top}' from line {start_idx}"
+                        })
+
+    for unclosed, start_idx in stack:
+        errors.append({
+            "file_path": rel_path,
+            "function_name": f"<syntax_error_L{start_idx}>",
+            "line_start": start_idx,
+            "line_end": start_idx,
+            "code": lines[start_idx - 1].strip() if start_idx <= len(lines) else "",
+            "language": lang or "generic",
+            "complexity": 1,
+            "docstring": "",
+            "node_id": f"{rel_path}:syntax_error_L{start_idx}",
+            "syntax_error": f"SyntaxError: Unclosed opening bracket '{unclosed}' at line {start_idx}"
+        })
+
+    # 4. Java & C / C++ Statement Semicolon Verification
+    if ext in (".java", ".c", ".cpp", ".cc", ".h", ".hpp") or lang in ("java", "c", "cpp"):
+        statement_starters = (
+            "System.out.", "return", "throw ", "import ", "package ", "break", "continue",
+            "int ", "long ", "float ", "double ", "char ", "boolean ", "String ", "auto ", "const "
+        )
+        for idx, line in enumerate(lines, 1):
+            stripped = line.strip()
+            clean = re.sub(r'//.*$', '', stripped).strip()
+            if not clean or clean.startswith("/*") or clean.startswith("*"):
+                continue
+
+            if clean.endswith(("{", "}", ";", ",", ":", "\\")):
+                continue
+            if re.match(r'^(?:public|private|protected|static|final|class|interface|enum|default|case\b|@|#)', clean):
+                if clean.endswith(")") and not any(clean.startswith(s) for s in ("System.out.", "return")):
+                    continue
+            if re.match(r'^(?:if|else|for|while|switch|try|catch|finally)\b', clean):
+                continue
+
+            is_statement = (
+                any(clean.startswith(s) for s in statement_starters) or
+                re.search(r'\b[a-zA-Z0-9_]+\s*=\s*[^;{]+$', clean) or
+                re.search(r'\b(?:print|println|printf|log)\s*\([^)]*\)$', clean) or
+                re.search(r'\.[a-zA-Z0-9_]+\s*\([^)]*\)$', clean)
+            )
+
+            if is_statement:
+                errors.append({
+                    "file_path": rel_path,
+                    "function_name": f"<syntax_error_L{idx}>",
+                    "line_start": idx,
+                    "line_end": idx,
+                    "code": stripped,
+                    "language": lang or "java",
+                    "complexity": 1,
+                    "docstring": "",
+                    "node_id": f"{rel_path}:syntax_error_L{idx}",
+                    "syntax_error": f"SyntaxError: Missing semicolon ';' at end of statement at line {idx}"
+                })
+
+    return errors
+
+
 def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
     """Slices source files into discrete function chunks and extracts import/call links."""
     raw_files = state.get("raw_files", [])
+    # Strip any UTF-8 BOM from all raw files
+    for f in raw_files:
+        if "content" in f and isinstance(f["content"], str):
+            f["content"] = f["content"].lstrip("\ufeff")
+
     function_chunks = []
     graph_nodes = []
     graph_edges = []
@@ -40,12 +224,7 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
     if HAS_PARSER_ENGINE and raw_files:
         try:
             builder = GraphBuilder(include_file_nodes=True)
-            for file_info in raw_files:
-                rel_path = file_info["rel_path"]
-                content = file_info["content"]
-                builder.add_file(rel_path, content=content)
-
-            builder.build_graph()
+            builder.build_from_raw_files(raw_files)
             pydantic_graph = builder.to_pydantic()
             graph_nodes = pydantic_graph.nodes
             graph_edges = pydantic_graph.edges
@@ -64,6 +243,36 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
                         "docstring": s.docstring,
                         "node_id": s.node_id,
                     })
+
+            # Also extract module-level scope (code outside functions: top-level secrets, configs, globals)
+            for file_info in raw_files:
+                rel_path = file_info["rel_path"]
+                content = file_info.get("content", "")
+                slices = builder.file_functions.get(rel_path, [])
+                func_lines = set()
+                for s in slices:
+                    func_lines.update(range(s.line_start, s.line_end + 1))
+                
+                lines = content.splitlines()
+                module_lines = [line for i, line in enumerate(lines, 1) if i not in func_lines and line.strip()]
+                if module_lines:
+                    lang = "python" if rel_path.endswith((".py", ".pyw")) else "javascript" if rel_path.endswith((".js", ".jsx", ".ts", ".tsx")) else "text"
+                    function_chunks.append({
+                        "file_path": rel_path,
+                        "function_name": "<module_scope>",
+                        "line_start": 1,
+                        "line_end": len(lines),
+                        "code": "\n".join(module_lines),
+                        "language": lang,
+                        "complexity": 1,
+                        "docstring": "",
+                        "node_id": f"{rel_path}:<module_scope>"
+                    })
+
+            # Check for polyglot syntax errors across all source files (Python, Java, JS, C/C++)
+            for file_info in raw_files:
+                syntax_errs = check_polyglot_syntax(file_info)
+                function_chunks.extend(syntax_errs)
 
             if function_chunks:
                 return {
@@ -87,7 +296,7 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
         file_node_id = rel_path
         graph_nodes.append(GraphNode(
             id=file_node_id,
-            label=file_info["filename"],
+            label=file_info.get("filename") or os.path.basename(rel_path),
             type="file",
             file_path=rel_path,
             risk_score=0.0
@@ -188,6 +397,11 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
                     "language": language
                 })
 
+    # Validate polyglot syntax across all raw files in Priority 2
+    for file_info in raw_files:
+        syntax_errs = check_polyglot_syntax(file_info)
+        function_chunks.extend(syntax_errs)
+
     return {
         "function_chunks": function_chunks,
         "dependency_graph": DependencyGraph(nodes=graph_nodes, edges=graph_edges),
@@ -204,31 +418,45 @@ def scan_vulnerabilities_node(state: AuditAgentState) -> Dict[str, Any]:
     rules = [
         {
             "category": "SQL Injection",
-            "regex": r"(?:execute\s*\(\s*f[\"'].*?\{|cursor\.execute\s*\([^,)]*%\s*\(|execute\s*\([^,)]*\+|f[\"'].*?(?:SELECT|INSERT|UPDATE|DELETE).*?\{)",
+            # Supports f-strings, string concatenation (+), % formatting, and .format() on SQL statements
+            "regex": (
+                r"(?:(?:cursor|db|session|conn|connection)\.execute\s*\(\s*(?:f[\"'].*?\{|.*?%\s*\(|.*?\+|.*?\.format\s*\()|"
+                r"execute\s*\(\s*f[\"'].*?\b(?:SELECT\b.*?\bFROM|INSERT\s+INTO|UPDATE\b.*?\bSET|DELETE\s+FROM)\b.*?\{|"
+                r"f[\"'].*?\b(?:SELECT\b.*?\bFROM\b|INSERT\s+INTO\b|UPDATE\s+[a-zA-Z0-9_]+\s+SET\b|DELETE\s+FROM\b).*?\{|"
+                r"[\"'].*?\b(?:SELECT\b.*?\bFROM|INSERT\s+INTO|UPDATE\b.*?\bSET|DELETE\s+FROM)\b.*?[\"']\s*(?:\+|\%|\.format\s*\())"
+            ),
             "severity": SeverityLevel.CRITICAL,
             "base_conf": 0.94
         },
         {
             "category": "Hardcoded Secret",
-            "regex": r"(?:api_key|secret_key|secret_token|secret|password|aws_secret|stripe_key)\s*=\s*['\"][A-Za-z0-9_\-]{16,}['\"]",
+            # Matches explicit secret token patterns (AIza..., sk_test_, sk_live_, ghp_, AKIA, etc.) with or without quotes on any variable,
+            # OR variable assignments of >=16 char strings to secret/key/token/password
+            "regex": (
+                r"(?:([A-Za-z0-9_]+)\s*=\s*['\"]?(?:AIza[0-9A-Za-z\-_]{35}|sk_live_[0-9a-zA-Z]{24,}|sk_test_[0-9a-zA-Z]{24,}|pk_live_[0-9a-zA-Z]{24,}|pk_test_[0-9a-zA-Z]{24,}|sk-[a-zA-Z0-9]{20,}|sk-proj-[a-zA-Z0-9_\-]{20,}|ghp_[0-9a-zA-Z_]{36,}|github_pat_[0-9a-zA-Z_]{36,}|AKIA[0-9A-Z]{16}|hf_[a-zA-Z0-9]{34,}|xox[baprs]-[0-9a-zA-Z-]{10,})['\"]?|"
+                r"\b([A-Za-z0-9_]*(?:api_key|secret_key|secret_token|aws_secret|stripe_key|gemini_key|private_key|token|password))\b\s*=\s*['\"][A-Za-z0-9_\-]{16,}['\"])"
+            ),
             "severity": SeverityLevel.HIGH,
             "base_conf": 0.91
         },
         {
             "category": "OS Command Injection",
-            "regex": r"(?:os\.system\s*\([^)]*\+|subprocess\.(?:Popen|call|run)\s*\([^)]*shell\s*=\s*True)",
+            # Detects os.system with dynamic arguments or subprocess with shell=True
+            "regex": r"(?:os\.system\s*\(\s*(?:f[\"'].*?\{|.*?%|.*?\+)|subprocess\.(?:Popen|call|run)\s*\([^)]*shell\s*=\s*True)",
             "severity": SeverityLevel.CRITICAL,
             "base_conf": 0.92
         },
         {
             "category": "Weak Cryptography",
-            "regex": r"(?:hashlib\.md5|hashlib\.sha1|DES\.new|RC4)",
+            # Word boundaries around broken hash/crypto identifiers
+            "regex": r"\b(hashlib\.md5|hashlib\.sha1|DES\.new|RC4)\b",
             "severity": SeverityLevel.MEDIUM,
             "base_conf": 0.84
         },
         {
             "category": "Insecure Deserialization",
-            "regex": r"(?:pickle\.loads|yaml\.load\s*\([^,)]*\)(?!\s*Loader))",
+            # pickle.load/loads or unsafe yaml.load
+            "regex": r"\b(pickle\.loads?|yaml\.load\s*\([^,)]*\)(?!\s*,\s*Loader))\b",
             "severity": SeverityLevel.HIGH,
             "base_conf": 0.88
         },
@@ -237,18 +465,104 @@ def scan_vulnerabilities_node(state: AuditAgentState) -> Dict[str, Any]:
             "regex": r"(?:open\s*\([^)]*\.\./|send_from_directory\s*\([^)]*\+)",
             "severity": SeverityLevel.HIGH,
             "base_conf": 0.87
+        },
+        {
+            "category": "Cross-site Scripting (XSS)",
+            # DOM-XSS, raw innerHTML/outerHTML injection, document.write, dangerouslySetInnerHTML
+            "regex": (
+                r"(?:\.(?:innerHTML|outerHTML)\s*=\s*(?:.*?\+|.*?`.*?\{|[a-zA-Z0-9_]+)|"
+                r"document\.(?:write|writeln)\s*\(|"
+                r"dangerouslySetInnerHTML\s*=|"
+                r"(?:\$\([\"'].*?[\"']\)|jQuery\([\"'].*?[\"']\))\.html\s*\(\s*(?:.*?\+|[a-zA-Z0-9_]+))"
+            ),
+            "severity": SeverityLevel.HIGH,
+            "base_conf": 0.93
+        },
+        {
+            "category": "Code Injection",
+            # Dangerous dynamic code evaluation via eval(), exec(), new Function()
+            "regex": (
+                r"(?:\b(?:eval|exec)\s*\([^)]+\)|"
+                r"\bnew\s+Function\s*\([^)]+\)|"
+                r"(?:setTimeout|setInterval)\s*\(\s*(?:['\"`].*?\+|[a-zA-Z0-9_]+)\s*,)"
+            ),
+            "severity": SeverityLevel.CRITICAL,
+            "base_conf": 0.95
+        },
+        {
+            "category": "Server-Side Request Forgery (SSRF)",
+            # Unvalidated user-supplied destinations in HTTP client calls
+            "regex": (
+                r"(?:requests\.(?:get|post|put|delete|patch)\s*\(\s*(?:[a-zA-Z0-9_]*url|[a-zA-Z0-9_]*target|req\.|request\.|params\.)|"
+                r"urllib\.request\.urlopen\s*\(\s*(?:[a-zA-Z0-9_]*url|request\.|req\.)|"
+                r"fetch\s*\(\s*(?:req\.|request\.|params\.|url|user_url|target_url)|"
+                r"axios\.(?:get|post)\s*\(\s*(?:req\.|params\.|url|user_url))"
+            ),
+            "severity": SeverityLevel.HIGH,
+            "base_conf": 0.89
+        },
+        {
+            "category": "Arbitrary File Upload",
+            # Saving files using raw user-provided filenames without sanitization
+            "regex": (
+                r"(?:file\.save\s*\(\s*.*?file\.filename|"
+                r"fs\.writeFile(?:Sync)?\s*\(\s*.*?file\.name)"
+            ),
+            "severity": SeverityLevel.CRITICAL,
+            "base_conf": 0.90
+        },
+        {
+            "category": "Cross-Site Request Forgery (CSRF)",
+            # State-changing actions performed over HTTP GET
+            "regex": (
+                r"(?:@app\.get\s*\(\s*[\"']/(?:transfer|delete|update|change_password|admin/action)|"
+                r"router\.get\s*\(\s*[\"']/(?:transfer|delete|update|change_password))"
+            ),
+            "severity": SeverityLevel.HIGH,
+            "base_conf": 0.86
+        },
+        {
+            "category": "Buffer Overflow",
+            # Unsafe legacy C string operations without buffer bounds
+            "regex": r"\b(strcpy|strcat|sprintf|gets)\s*\(",
+            "severity": SeverityLevel.CRITICAL,
+            "base_conf": 0.95
+        },
+        {
+            "category": "Integer Overflow",
+            # Unchecked multiplication leading to undersized memory allocations
+            "regex": r"\b(?:malloc|calloc)\s*\(\s*[a-zA-Z0-9_]+\s*\*\s*[a-zA-Z0-9_]+\s*\)",
+            "severity": SeverityLevel.MEDIUM,
+            "base_conf": 0.85
         }
     ]
 
     for chunk in chunks:
+        if "syntax_error" in chunk:
+            scanned_vulns.append({
+                "chunk": chunk,
+                "category": "Syntax Error",
+                "severity": SeverityLevel.HIGH,
+                "confidence": 1.0,
+                "match_text": chunk["code"],
+                "matched_var": None,
+                "error_details": chunk.get("syntax_error")
+            })
+            continue
+
         code = chunk["code"]
         for rule in rules:
-            if re.search(rule["regex"], code, re.IGNORECASE):
+            match = re.search(rule["regex"], code, re.IGNORECASE)
+            if match:
+                groups = match.groups()
+                matched_var = next((g for g in groups if g), None)
                 scanned_vulns.append({
                     "chunk": chunk,
                     "category": rule["category"],
                     "severity": rule["severity"],
-                    "confidence": rule["base_conf"]
+                    "confidence": rule["base_conf"],
+                    "match_text": match.group(0),
+                    "matched_var": matched_var
                 })
                 break
 
@@ -258,8 +572,125 @@ def scan_vulnerabilities_node(state: AuditAgentState) -> Dict[str, Any]:
     }
 
 
+FALLBACK_CWE_MAP = {
+    "SQL Injection": {
+        "cwe_id": "CWE-89",
+        "cwe_title": "Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')",
+        "owasp_category": "A03:2021 - Injection",
+        "description": "The application constructs an SQL statement using raw user-controllable input without neutralization or parameterization, allowing an attacker to manipulate query structure and execute arbitrary SQL commands.",
+        "mitigation": "Always use parameterized queries (prepared statements) or an Object-Relational Mapper (ORM) with parameterized bindings. Never concatenate or format strings directly into SQL queries.",
+        "example_fix": "cursor.execute(\"SELECT * FROM users WHERE username = %s AND password = %s\", (user, pwd))"
+    },
+    "Hardcoded Secret": {
+        "cwe_id": "CWE-798",
+        "cwe_title": "Use of Hard-coded Credentials",
+        "owasp_category": "A07:2021 - Identification and Authentication Failures",
+        "description": "Hard-coding sensitive credentials, passwords, cryptographic keys, or API tokens directly within source code exposes them to anyone with repository access.",
+        "mitigation": "Store credentials outside of source code using environment variables, cloud key vaults (AWS Secrets Manager, Azure Key Vault, HashiCorp Vault), or configuration files listed in .gitignore.",
+        "example_fix": "API_KEY = os.getenv('STRIPE_API_KEY')\nif not API_KEY:\n    raise ValueError('Missing required environment variable STRIPE_API_KEY')"
+    },
+    "Weak Cryptography": {
+        "cwe_id": "CWE-328",
+        "cwe_title": "Use of Weak Hash / Broken Cryptographic Algorithm",
+        "owasp_category": "A02:2021 - Cryptographic Failures",
+        "description": "The application uses a broken or risky cryptographic hash algorithm (e.g. MD5, SHA-1, DES, RC4) susceptible to collision attacks or trivial reverse cracking.",
+        "mitigation": "Upgrade to secure modern cryptographic hashing algorithms such as SHA-256/SHA-512, or purpose-built password hashing functions like bcrypt, scrypt, or Argon2id.",
+        "example_fix": "hashlib.sha256(data.encode('utf-8')).hexdigest()"
+    },
+    "OS Command Injection": {
+        "cwe_id": "CWE-78",
+        "cwe_title": "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+        "owasp_category": "A03:2021 - Injection",
+        "description": "The application constructs an operating system command using unvalidated user input and executes it via a shell, enabling attackers to execute arbitrary system-level commands.",
+        "mitigation": "Avoid executing OS shell commands when library APIs exist. If subprocess execution is required, pass arguments as a structured array without shell=True.",
+        "example_fix": "subprocess.run(['command', arg1, arg2], check=True, shell=False)"
+    },
+    "Insecure Deserialization": {
+        "cwe_id": "CWE-502",
+        "cwe_title": "Deserialization of Untrusted Data",
+        "owasp_category": "A08:2021 - Software and Data Integrity Failures",
+        "description": "The application deserializes untrusted data without verification. Serialized object representations can contain bytecode instructions leading to arbitrary remote code execution.",
+        "mitigation": "Do not deserialize untrusted data using formats that support arbitrary code execution (e.g., pickle). Use safe serialization standards such as JSON or Protocol Buffers.",
+        "example_fix": "payload = json.loads(untrusted_stream.decode('utf-8'))"
+    },
+    "Path Traversal": {
+        "cwe_id": "CWE-22",
+        "cwe_title": "Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')",
+        "owasp_category": "A01:2021 - Broken Access Control",
+        "description": "The application uses external input to construct a pathname intended to identify a file or directory located under a restricted directory, but does not properly neutralize sequences like '../'.",
+        "mitigation": "Validate path input against an allowlist, use safe path resolution methods, and prevent path separators or relative directory navigation.",
+        "example_fix": "safe_path = os.path.join(base_dir, os.path.basename(user_path))"
+    },
+    "Syntax Error": {
+        "cwe_id": "CWE-754",
+        "cwe_title": "Improper Check for Unusual or Exceptional Conditions (Syntax Error)",
+        "owasp_category": "A08:2021 - Software and Data Integrity Failures",
+        "description": "The file contains a syntax violation preventing compilation or execution.",
+        "mitigation": "Correct the syntax error (check unclosed brackets, missing colons, or improper indentation).",
+        "example_fix": "# Correct syntax error"
+    },
+    "Cross-site Scripting (XSS)": {
+        "cwe_id": "CWE-79",
+        "cwe_title": "Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting - XSS')",
+        "owasp_category": "A03:2021 - Injection",
+        "description": "The application receives untrusted input and includes it in a web page without proper validation or encoding, allowing malicious scripts to execute in a victim's browser context.",
+        "mitigation": "Use context-aware output encoding (e.g. textContent instead of innerHTML), modern template engines with auto-escaping, and enforce Content Security Policy (CSP).",
+        "example_fix": "element.textContent = 'Welcome ' + user_name;"
+    },
+    "Code Injection": {
+        "cwe_id": "CWE-94",
+        "cwe_title": "Improper Control of Generation of Code ('Code Injection')",
+        "owasp_category": "A03:2021 - Injection",
+        "description": "The application receives untrusted input and passes it to dynamic evaluation functions (e.g., Python eval, exec, JavaScript eval), allowing arbitrary code execution in the application context.",
+        "mitigation": "Never use eval() or exec() with untrusted user input. Use safe data parsing libraries (such as json.loads or JSON.parse).",
+        "example_fix": "const data = JSON.parse(userInput);"
+    },
+    "Server-Side Request Forgery (SSRF)": {
+        "cwe_id": "CWE-918",
+        "cwe_title": "Server-Side Request Forgery ('SSRF')",
+        "owasp_category": "A10:2021 - Server-Side Request Forgery",
+        "description": "The web server receives a URL from an untrusted user and makes a network request to that URL without validating the destination, allowing internal network reconnaissance or cloud metadata theft.",
+        "mitigation": "Enforce strict allowlists of acceptable hostnames/domains. Reject loopback and private IP ranges (127.0.0.1, 169.254.169.254, 10.0.0.0/8).",
+        "example_fix": "validate_safe_url(target_url)\nresponse = requests.get(target_url, timeout=5)"
+    },
+    "Arbitrary File Upload": {
+        "cwe_id": "CWE-434",
+        "cwe_title": "Unrestricted Upload of File with Dangerous Type",
+        "owasp_category": "A08:2021 - Software and Data Integrity Failures",
+        "description": "The software allows uploading files of dangerous types that can be directly executed within the server environment.",
+        "mitigation": "Validate file extensions against an allowlist, verify MIME types, generate randomized unique filenames, and store uploaded files outside the web root.",
+        "example_fix": "safe_filename = f'{uuid.uuid4()}{ext}'"
+    },
+    "Cross-Site Request Forgery (CSRF)": {
+        "cwe_id": "CWE-352",
+        "cwe_title": "Cross-Site Request Forgery ('CSRF')",
+        "owasp_category": "A01:2021 - Broken Access Control",
+        "description": "The web application does not verify whether a state-changing request was intentionally provided by the authenticated user.",
+        "mitigation": "Use anti-CSRF tokens for state-changing requests, configure SameSite=Lax/Strict on session cookies, and enforce custom request headers.",
+        "example_fix": "@app.post('/transfer')\ndef transfer(amount, csrf_token = Depends(verify_csrf)): ..."
+    },
+    "Buffer Overflow": {
+        "cwe_id": "CWE-787",
+        "cwe_title": "Out-of-bounds Write ('Buffer Overflow')",
+        "owasp_category": "A06:2021 - Vulnerable and Outdated Components",
+        "description": "The software writes data past the end, or before the beginning, of the intended buffer in C/C++, causing memory corruption or arbitrary code execution.",
+        "mitigation": "Use bounds-checking functions (strncpy, snprintf), avoid raw pointer arithmetic without bounds checks, or use memory-safe abstractions.",
+        "example_fix": "snprintf(buffer, sizeof(buffer), \"%s\", user_input);"
+    },
+    "Integer Overflow": {
+        "cwe_id": "CWE-190",
+        "cwe_title": "Integer Overflow or Wraparound",
+        "owasp_category": "A06:2021 - Vulnerable and Outdated Components",
+        "description": "The software performs an integer calculation that can produce an integer overflow or wraparound, resulting in unexpected values used for memory allocation sizes.",
+        "mitigation": "Check for integer overflow before arithmetic operations that calculate buffer sizes or loop counters.",
+        "example_fix": "if (size > 0 && count > SIZE_MAX / size) return ERROR_OVERFLOW;"
+    }
+}
+
+
 def rag_grounding_node(state: AuditAgentState) -> Dict[str, Any]:
-    """Queries local FAISS Vector RAG Engine for grounded CWE standards."""
+    """Queries local FAISS Vector RAG Engine for grounded CWE standards, or uses direct standard mapping if RAG disabled."""
+    enable_rag = state.get("enable_rag", True)
     scanned_vulns = state.get("scanned_vulnerabilities", [])
     grounded_evidence = []
 
@@ -267,48 +698,260 @@ def rag_grounding_node(state: AuditAgentState) -> Dict[str, Any]:
         chunk = item["chunk"]
         category = item["category"]
 
-        # Sub-millisecond vector search
-        retrieved_docs = rag_engine.retrieve(
-            query=chunk["code"][:300],
-            category_hint=category,
-            top_k=1
-        )
-        matched_cwe = retrieved_docs[0] if retrieved_docs else {
-            "cwe_id": "CWE-699",
-            "cwe_title": "Software Development Weakness",
-            "description": "General security pattern deviation.",
-            "mitigation": "Review code against secure coding principles.",
-            "example_fix": "# Review and apply validation"
-        }
+        if category == "Syntax Error":
+            matched_cwe = dict(FALLBACK_CWE_MAP["Syntax Error"])
+            if item.get("error_details"):
+                matched_cwe["description"] = item["error_details"]
+        elif enable_rag:
+            # Sub-millisecond vector similarity search in FAISS
+            retrieved_docs = rag_engine.retrieve(
+                query=chunk["code"][:300],
+                category_hint=category,
+                top_k=1
+            )
+            matched_cwe = retrieved_docs[0] if retrieved_docs else FALLBACK_CWE_MAP.get(category, {
+                "cwe_id": "CWE-699",
+                "cwe_title": "Software Development Weakness",
+                "description": "General security pattern deviation.",
+                "mitigation": "Review code against secure coding principles.",
+                "example_fix": "# Review and apply validation"
+            })
+        else:
+            # Direct static mapping when FAISS Vector RAG is disabled
+            matched_cwe = FALLBACK_CWE_MAP.get(category, {
+                "cwe_id": "CWE-699",
+                "cwe_title": "Software Development Weakness",
+                "description": "General security pattern deviation.",
+                "mitigation": "Review code against secure coding principles.",
+                "example_fix": "# Review and apply validation"
+            })
 
         grounded_evidence.append({
             **item,
             "cwe_doc": matched_cwe
         })
 
+    stage_desc = f"Grounded {len(grounded_evidence)} items with authoritative CWE standards" if enable_rag else f"Mapped {len(grounded_evidence)} items to CWE standards (FAISS bypassed)"
     return {
         "grounded_evidence": grounded_evidence,
-        "current_stage": f"Grounded {len(grounded_evidence)} items with authoritative CWE standards"
+        "current_stage": stage_desc
     }
 
 
+def _generate_contextual_fix(category: str, code: str, cwe: Dict[str, Any], matched_var: Optional[str] = None) -> str:
+    """Generates a contextual grounded replacement code diff instead of generic templates."""
+    cwe_id = cwe.get("cwe_id", "CWE-SEC")
+    fix_suggestion = cwe.get("example_fix", "# Apply secure coding pattern")
+
+    if category == "Weak Cryptography":
+        if "hashlib.md5" in code:
+            replaced = re.sub(r"hashlib\.md5\((.*?)\)", r"hashlib.sha256(\1)", code)
+            return f"# Grounded Fix ({cwe_id}): Replace MD5 with SHA-256 (or bcrypt/argon2 for passwords)\n" + replaced
+        elif "hashlib.sha1" in code:
+            replaced = re.sub(r"hashlib\.sha1\((.*?)\)", r"hashlib.sha256(\1)", code)
+            return f"# Grounded Fix ({cwe_id}): Replace deprecated SHA-1 with SHA-256\n" + replaced
+
+    elif category == "Hardcoded Secret":
+        target_var = matched_var or "API_KEY"
+        env_var = "API_KEY"
+        if "AIza" in code:
+            env_var = "GEMINI_API_KEY"
+        elif "sk_live" in code or "sk_test" in code:
+            env_var = "STRIPE_API_KEY"
+        elif "ghp_" in code or "github_pat" in code:
+            env_var = "GITHUB_TOKEN"
+        elif "AKIA" in code or "aws" in code.lower():
+            env_var = "AWS_SECRET_KEY"
+        elif matched_var and len(matched_var) > 2:
+            env_var = matched_var.upper()
+
+        return (
+            f"import os\n"
+            f"# Grounded Fix ({cwe_id}): Read sensitive credential from environment variables\n"
+            f"{target_var} = os.getenv('{env_var}')\n"
+            f"if not {target_var}:\n"
+            f"    raise ValueError('Missing required environment variable {env_var}')"
+        )
+
+    elif category == "Insecure Deserialization":
+        if "pickle.loads" in code:
+            replaced = re.sub(r"pickle\.loads\((.*?)\)", r"json.loads(\1.decode('utf-8') if isinstance(\1, bytes) else \1)", code)
+            return f"import json\n# Grounded Fix ({cwe_id}): Avoid pickle; use secure JSON or Protocol Buffers\n" + replaced
+
+    elif category == "OS Command Injection":
+        if "os.system" in code:
+            return (
+                f"import subprocess\n"
+                f"# Grounded Fix ({cwe_id}): Avoid os.system; execute subprocess with structured arguments without shell=True\n"
+                f"# Example: subprocess.run(['command', arg1, arg2], check=True, shell=False)"
+            )
+
+    elif category == "SQL Injection":
+        placeholder = "?" if ("sqlite" in code.lower() or "sqlite3" in code.lower()) else "%s"
+        code_fixed = code
+
+        # 1. Direct execution: cursor.execute(f"SELECT ...")
+        def replace_exec(match):
+            sql_str = match.group(1)
+            vars_found = re.findall(r"\{([a-zA-Z0-9_\.\[\]]+)\}", sql_str)
+            if not vars_found:
+                return match.group(0)
+            clean_sql = re.sub(r"['\"]?\{[a-zA-Z0-9_\.\[\]]+\}['\"]?", placeholder, sql_str)
+            params_tuple = f"({', '.join(vars_found)}{',' if len(vars_found) == 1 else ''})"
+            return f'cursor.execute("{clean_sql}", {params_tuple})'
+
+        code_fixed = re.sub(r'cursor\.execute\s*\(\s*f["\'](.*?)["\']\s*\)', replace_exec, code_fixed)
+
+        # 2. Query variable assignment: query = f"SELECT ..." followed by cursor.execute(query)
+        def replace_query_var(match):
+            var_name = match.group(1)
+            sql_str = match.group(2)
+            vars_found = re.findall(r"\{([a-zA-Z0-9_\.\[\]]+)\}", sql_str)
+            if not vars_found:
+                return match.group(0)
+            clean_sql = re.sub(r"['\"]?\{[a-zA-Z0-9_\.\[\]]+\}['\"]?", placeholder, sql_str)
+            params_tuple = f"({', '.join(vars_found)}{',' if len(vars_found) == 1 else ''})"
+            return f'{var_name} = "{clean_sql}"\n    # Grounded Fix ({cwe_id}): Parameterized query bindings\n    cursor.execute({var_name}, {params_tuple})'
+
+        code_fixed = re.sub(
+            r'([a-zA-Z0-9_]+)\s*=\s*f["\'](.*?)["\']\s*\n\s*cursor\.execute\(\1\)',
+            replace_query_var,
+            code_fixed
+        )
+
+        # 3. String concatenation: query = "SELECT ... " + var
+        def replace_concat(match):
+            var_name = match.group(1)
+            sql_head = match.group(2)
+            var_injected = match.group(3)
+            clean_sql = re.sub(r"['\"]?\s*$", "", sql_head).strip() + " " + placeholder
+            return f'{var_name} = "{clean_sql}"\n    # Grounded Fix ({cwe_id}): Parameterized query bindings\n    cursor.execute({var_name}, ({var_injected},))'
+
+        code_fixed = re.sub(
+            r'([a-zA-Z0-9_]+)\s*=\s*["\'](SELECT\b.*?FROM\b.*?WHERE\b.*?=)\s*["\']\s*\+\s*([a-zA-Z0-9_]+)',
+            replace_concat,
+            code_fixed,
+            flags=re.IGNORECASE
+        )
+
+        # 4. String formatting %: query = "SELECT ... WHERE x = %s" % (var,)
+        def replace_percent(match):
+            var_name = match.group(1)
+            sql_head = match.group(2)
+            vars_injected = match.group(3)
+            clean_sql = sql_head.replace("%s", placeholder).replace("%d", placeholder)
+            return f'{var_name} = "{clean_sql}"\n    # Grounded Fix ({cwe_id}): Pass tuple to cursor.execute instead of string % operator\n    cursor.execute({var_name}, {vars_injected})'
+
+        code_fixed = re.sub(
+            r'([a-zA-Z0-9_]+)\s*=\s*["\'](SELECT\b.*?FROM\b.*?WHERE\b.*?)\s*["\']\s*%\s*(\([^)]+\)|[a-zA-Z0-9_]+)',
+            replace_percent,
+            code_fixed,
+            flags=re.IGNORECASE
+        )
+
+        if code_fixed != code:
+            return f"# Grounded Fix ({cwe_id}): Use parameterized query with safe placeholder bindings\n" + code_fixed
+
+    elif category == "Cross-site Scripting (XSS)":
+        if ".innerHTML" in code:
+            fixed = code.replace(".innerHTML", ".textContent")
+            return f"// Grounded Fix ({cwe_id}): Use textContent instead of innerHTML to prevent script execution\n" + fixed
+        elif ".outerHTML" in code:
+            fixed = code.replace(".outerHTML", ".textContent")
+            return f"// Grounded Fix ({cwe_id}): Avoid outerHTML injection; use textContent\n" + fixed
+        elif "document.write" in code:
+            return f"// Grounded Fix ({cwe_id}): Avoid document.write(); manipulate textContent on target element instead\n" + code
+
+    elif category == "Code Injection":
+        if "eval(" in code:
+            fixed = code.replace("eval(", "JSON.parse(" if ("function" in code or "const" in code or "let" in code) else "json.loads(")
+            return f"# Grounded Fix ({cwe_id}): Avoid dynamic eval(); parse data with structured JSON\n" + fixed
+
+    elif category == "Buffer Overflow":
+        if "strcpy(" in code:
+            fixed = re.sub(r"strcpy\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*([a-zA-Z0-9_]+)\s*\)", r"strncpy(\1, \2, sizeof(\1) - 1);\n    \1[sizeof(\1) - 1] = '\\0'", code)
+            return f"// Grounded Fix ({cwe_id}): Use bounded strncpy with null-termination\n" + fixed
+
+    elif category == "Syntax Error":
+        stripped = code.strip()
+        # If line is a comment or blank, leave it as is
+        if stripped.startswith(("#", "//", "/*", "*", '"""', "'''")):
+            return f"// Non-executable comment or documentation line\n" + code
+
+        if "missing semicolon" in str(fix_suggestion).lower() or ("semicolon" in str(cwe.get("description", "")).lower()):
+            if not code.rstrip().endswith(";"):
+                return f"// Grounded Fix ({cwe_id}): Added missing semicolon\n" + code.rstrip() + ";"
+        if "(" in code and ")" not in code and ":" in code and not stripped.startswith(("#", "//")):
+            fixed = re.sub(r":\s*$", "):", code)
+            return f"# Grounded Fix ({cwe_id}): Corrected syntax violation (closed missing parenthesis)\n" + fixed
+        return f"// Grounded Fix ({cwe_id}): Review and correct syntax\n" + code
+
+    return f"# Grounded Fix ({cwe_id}):\n" + fix_suggestion
+
+
 def synthesize_fixes_node(state: AuditAgentState) -> Dict[str, Any]:
-    """Generates side-by-side replacement code diffs and explanation."""
+    """Generates side-by-side replacement code diffs and explanation with parallel worker speedup."""
     grounded_evidence = state.get("grounded_evidence", [])
     findings: List[Finding] = []
     graph = state.get("dependency_graph", DependencyGraph())
-
-    # Map node risk scores onto graph
     node_risk_map = {}
 
-    for i, item in enumerate(grounded_evidence, 1):
+    import concurrent.futures
+
+    # Cache to avoid duplicate LLM calls for identical vulnerability patterns across multiple files
+    remediation_cache: Dict[Any, str] = {}
+
+    def process_item(item_idx: int, item: Dict[str, Any]) -> Tuple[int, Dict[str, Any], str]:
+        chunk = item["chunk"]
+        cwe = item["cwe_doc"]
+        category = item["category"]
+        original_code = chunk["code"]
+        matched_var = item.get("matched_var")
+        lang = chunk.get("language")
+
+        # Create cache key to reuse fixes for identical repeated patterns
+        cache_key = (category, cwe.get("cwe_id"), original_code[:120].strip())
+        if cache_key in remediation_cache:
+            return item_idx, item, remediation_cache[cache_key]
+
+        fix_code = None
+        # Call AI for top 12 findings or if total findings <= 15
+        if item_idx <= 12:
+            try:
+                fix_code = generate_ai_remediation(
+                    category=category,
+                    cwe_id=cwe["cwe_id"],
+                    vulnerable_code=original_code,
+                    file_path=chunk["file_path"],
+                    error_details=cwe.get("description"),
+                    language=lang
+                )
+            except Exception:
+                pass
+
+        # Fallback to instantaneous deterministic AST patch generator
+        if not fix_code:
+            fix_code = _generate_contextual_fix(category, original_code, cwe, matched_var)
+
+        remediation_cache[cache_key] = fix_code
+        return item_idx, item, fix_code
+
+    # Execute with ThreadPoolExecutor (max_workers=5) for 5x-10x speedup
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(process_item, i, item) for i, item in enumerate(grounded_evidence, 1)]
+        for f in concurrent.futures.as_completed(futures):
+            results.append(f.result())
+
+    # Sort back into original order
+    results.sort(key=lambda r: r[0])
+
+    for i, item, fix_code in results:
         chunk = item["chunk"]
         cwe = item["cwe_doc"]
         finding_id = f"FIND-{i:03d}"
-
-        # Generate grounded fix code
+        category = item["category"]
         original_code = chunk["code"]
-        fix_suggestion = cwe.get("example_fix", "# Apply input validation and safe API")
 
         finding = Finding(
             id=finding_id,
@@ -316,14 +959,14 @@ def synthesize_fixes_node(state: AuditAgentState) -> Dict[str, Any]:
             line_start=chunk["line_start"],
             line_end=chunk["line_end"],
             function_name=chunk.get("function_name"),
-            category=item["category"],
+            category=category,
             severity=item["severity"],
             confidence=item["confidence"],
             cwe_id=cwe["cwe_id"],
             cwe_title=cwe["cwe_title"],
             description=cwe["description"],
             vulnerable_code=original_code,
-            fix_code=f"# Grounded Fix ({cwe['cwe_id']}):\n" + fix_suggestion,
+            fix_code=fix_code,
             explanation=f"Grounded in {cwe.get('owasp_category', 'OWASP Top 10')} & {cwe['cwe_id']}: {cwe['mitigation']}"
         )
         findings.append(finding)

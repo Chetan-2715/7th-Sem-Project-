@@ -75,9 +75,6 @@ export default function FindingsTable({ findings = [] }) {
             <AlertTriangle className="w-5 h-5 text-yellow-400" />
             Vulnerability Findings &amp; Grounded Remediations
           </h2>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Cross-checked against MITRE CWE Top 25 and OWASP Top 10 with verified side-by-side patch diffs.
-          </p>
         </div>
 
         {/* Filter Controls & Search */}

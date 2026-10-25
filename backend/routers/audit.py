@@ -8,11 +8,12 @@ REST API Endpoints for Codebase Auditing:
 """
 
 import os
+from pathlib import Path
 import uuid
 import tempfile
 import asyncio
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException, status, Request
 from pydantic import ValidationError
@@ -21,7 +22,7 @@ from backend.schemas import (
     AuditRequest, AuditResult, TaskStatusResponse, AuditStatus,
     Finding, SeverityLevel, AuditSummary, DependencyGraph, GraphNode, GraphEdge
 )
-from backend.services.ingestor import CodebaseIngestor, IngestionError
+from backend.services.ingestor import CodebaseIngestor, IngestionError, detect_code_language
 from backend.services.task_manager import audit_task_manager
 from agent.orchestrator import audit_orchestrator
 
@@ -183,9 +184,17 @@ def generate_sample_report(repo_name: str = "sample-repo") -> AuditResult:
     )
 
 
-async def execute_background_audit(task_id: str, repo_url: Optional[str] = None, zip_temp_path: Optional[str] = None):
+async def execute_background_audit(
+    task_id: str,
+    repo_url: Optional[str] = None,
+    zip_temp_path: Optional[str] = None,
+    single_file_data: Optional[Tuple[str, bytes]] = None,
+    raw_code_data: Optional[Tuple[str, str]] = None,
+    enable_rag: bool = True,
+    enable_ml: bool = True
+):
     """
-    Background worker simulating/executing multi-step audit pipeline:
+    Background worker executing multi-step audit pipeline:
     1. Ingestion (0% -> 25%)
     2. AST & Dependency Graph parsing (25% -> 50%)
     3. CodeBERT Vulnerability classification (50% -> 75%)
@@ -194,8 +203,8 @@ async def execute_background_audit(task_id: str, repo_url: Optional[str] = None,
     temp_dir = None
     try:
         # Step 1: Ingestion
-        audit_task_manager.update_progress(task_id, 15, "Ingesting repository", "Cloning or unpacking source files...")
-        await asyncio.sleep(1.0)
+        audit_task_manager.update_progress(task_id, 15, "Ingesting source code", "Preparing source files for audit...")
+        await asyncio.sleep(0.5)
 
         repo_name = "analyzed-codebase"
         if repo_url:
@@ -206,6 +215,20 @@ async def execute_background_audit(task_id: str, repo_url: Optional[str] = None,
                 os.remove(zip_temp_path)
             except Exception:
                 pass
+        elif single_file_data:
+            filename, file_bytes = single_file_data
+            temp_dir = tempfile.mkdtemp(prefix="audit_file_")
+            repo_name = Path(filename).stem
+            file_dest = Path(temp_dir) / filename
+            with open(file_dest, "wb") as f:
+                f.write(file_bytes)
+        elif raw_code_data:
+            filename, code_text = raw_code_data
+            temp_dir = tempfile.mkdtemp(prefix="audit_raw_")
+            repo_name = Path(filename).stem or "raw-snippet"
+            file_dest = Path(temp_dir) / filename
+            with open(file_dest, "w", encoding="utf-8") as f:
+                f.write(code_text)
 
         files = ingestor.walk_codebase(temp_dir) if temp_dir else []
         total_files = len(files)
@@ -218,10 +241,34 @@ async def execute_background_audit(task_id: str, repo_url: Optional[str] = None,
             result = audit_orchestrator.run(
                 repo_name=repo_name,
                 raw_files=files,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                enable_rag=enable_rag,
+                enable_ml=enable_ml
             )
         else:
-            result = generate_sample_report(repo_name=repo_name)
+            # Genuine clean report when no supported code files are discovered
+            result = AuditResult(
+                audit_id=str(uuid.uuid4()),
+                repo_name=repo_name,
+                status=AuditStatus.COMPLETED,
+                health_score=100,
+                total_files=0,
+                total_functions=0,
+                scanned_at=datetime.utcnow().isoformat() + "Z",
+                summary=AuditSummary(
+                    critical_count=0,
+                    high_count=0,
+                    medium_count=0,
+                    low_count=0,
+                    total_findings=0
+                ),
+                findings=[],
+                dependency_graph=DependencyGraph(nodes=[], edges=[])
+            )
+            audit_task_manager.update_progress(
+                task_id, 100, "Audit Complete",
+                "Scan complete: No supported source code files found in this repository."
+            )
 
         audit_reports_db[result.audit_id] = result
         audit_task_manager.complete_task(task_id, result)
@@ -244,13 +291,20 @@ async def start_audit(
 ):
     """
     Initiates an automated audit job.
-    Accepts either:
-    1. JSON body: {"repo_url": "https://github.com/..."}
-    2. Multipart form-data: with uploaded '.zip' file or 'repo_url' field
+    Accepts:
+    1. GitHub URL: {"repo_url": "https://github.com/..."}
+    2. Uploaded ZIP archive or single code file (multipart/form-data)
+    3. Raw code string: {"raw_code": "def foo()...", "filename": "app.py"}
     """
     target_url = None
     file = None
+    raw_code = None
+    filename = "snippet.py"
     zip_temp_path = None
+    single_file_data = None
+    raw_code_data = None
+    enable_rag = True
+    enable_ml = True
 
     content_type = raw_request.headers.get("content-type", "")
 
@@ -258,34 +312,59 @@ async def start_audit(
         try:
             body = await raw_request.json()
             target_url = body.get("repo_url")
+            raw_code = body.get("raw_code")
+            if body.get("filename"):
+                filename = body.get("filename")
+            if "enable_rag" in body:
+                enable_rag = bool(body.get("enable_rag"))
+            if "enable_ml" in body:
+                enable_ml = bool(body.get("enable_ml"))
         except Exception:
             pass
     elif "multipart/form-data" in content_type:
         form = await raw_request.form()
         target_url = form.get("repo_url")
+        raw_code = form.get("raw_code")
+        if form.get("filename"):
+            filename = str(form.get("filename"))
+        if "enable_rag" in form:
+            enable_rag = str(form.get("enable_rag")).lower() in ("true", "1", "yes")
+        if "enable_ml" in form:
+            enable_ml = str(form.get("enable_ml")).lower() in ("true", "1", "yes")
         upload = form.get("file")
         if upload and hasattr(upload, "filename") and upload.filename:
             file = upload
 
-    if not target_url and not file:
+    if not target_url and not file and not raw_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Must provide either a valid 'repo_url' or an uploaded '.zip' file."
+            detail="Must provide either a 'repo_url', an uploaded file/zip, or 'raw_code'."
         )
 
     if file:
-        if not file.filename.endswith(".zip"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Uploaded file must be a .zip archive."
-            )
-        temp_fd, zip_temp_path = tempfile.mkstemp(suffix=".zip")
-        with os.fdopen(temp_fd, "wb") as f:
-            content = await file.read()
-            f.write(content)
+        file_bytes = await file.read()
+        if file.filename.lower().endswith(".zip"):
+            temp_fd, zip_temp_path = tempfile.mkstemp(suffix=".zip")
+            with os.fdopen(temp_fd, "wb") as f:
+                f.write(file_bytes)
+        else:
+            single_file_data = (file.filename, file_bytes)
+
+    if raw_code:
+        detected_fn, _ = detect_code_language(raw_code, filename)
+        raw_code_data = (detected_fn, raw_code)
 
     task_id = audit_task_manager.create_task("Starting audit pipeline...")
-    background_tasks.add_task(execute_background_audit, task_id, target_url, zip_temp_path)
+    background_tasks.add_task(
+        execute_background_audit,
+        task_id=task_id,
+        repo_url=target_url,
+        zip_temp_path=zip_temp_path,
+        single_file_data=single_file_data,
+        raw_code_data=raw_code_data,
+        enable_rag=enable_rag,
+        enable_ml=enable_ml
+    )
 
     return audit_task_manager.get_task(task_id)
 

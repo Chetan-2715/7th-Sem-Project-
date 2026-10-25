@@ -60,25 +60,26 @@ export default function App() {
     }, 1000);
   };
 
-  // Start GitHub Audit
-  const handleStartAudit = async ({ repoUrl, enableRag, enableMl }) => {
+  // Start GitHub or Raw Code Audit
+  const handleStartAudit = async ({ repoUrl, rawCode, filename, enableRag, enableMl }) => {
+    const isRaw = Boolean(rawCode);
     setTaskStatus({
       taskId: null,
-      stage: 'Cloning repository & initializing pipeline...',
+      stage: isRaw ? 'Parsing raw code snippet...' : 'Cloning repository & initializing pipeline...',
       progress: 5,
-      message: `Target: ${repoUrl}`,
+      message: isRaw ? `Auditing raw code (${filename || 'snippet.py'})` : `Target: ${repoUrl}`,
     });
     setIsAuditing(true);
 
     try {
+      const payload = isRaw
+        ? { raw_code: rawCode, filename: filename || 'snippet.py', enable_rag: enableRag, enable_ml: enableMl }
+        : { repo_url: repoUrl, enable_rag: enableRag, enable_ml: enableMl };
+
       const res = await fetch('/api/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repo_url: repoUrl,
-          enable_rag: enableRag,
-          enable_ml: enableMl,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) throw new Error('Failed to initiate audit');
@@ -90,16 +91,17 @@ export default function App() {
     }
   };
 
-  // Upload ZIP Audit
-  const handleUploadZip = async (file, { enableRag, enableMl }) => {
+  // Upload ZIP or Single Code File
+  const handleUploadFile = async (file, { enableRag, enableMl }) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('enable_rag', enableRag);
     formData.append('enable_ml', enableMl);
 
+    const isZip = file.name.toLowerCase().endsWith('.zip');
     setTaskStatus({
       taskId: null,
-      stage: 'Uploading and extracting ZIP archive...',
+      stage: isZip ? 'Uploading & extracting ZIP archive...' : 'Uploading & ingesting source file...',
       progress: 10,
       message: `File: ${file.name}`,
     });
@@ -111,37 +113,12 @@ export default function App() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Failed to upload ZIP');
+      if (!res.ok) throw new Error('Failed to upload file');
       const task = await res.json();
       startPolling(task.task_id);
     } catch (err) {
       setIsAuditing(false);
-      alert(`Error uploading archive: ${err.message}`);
-    }
-  };
-
-  // Load Offline Demo Sample
-  const handleLoadDemo = async () => {
-    setTaskStatus({
-      taskId: 'sample-demo',
-      stage: 'Loading verified sample audit report...',
-      progress: 50,
-      message: 'Retrieving grounded findings and call graph from backend...',
-    });
-    setIsAuditing(true);
-
-    try {
-      const res = await fetch('/api/sample-report');
-      if (!res.ok) throw new Error('Failed to fetch sample report');
-      const data = await res.json();
-
-      setTimeout(() => {
-        setIsAuditing(false);
-        setReport(data);
-      }, 400);
-    } catch (err) {
-      setIsAuditing(false);
-      alert(`Error loading sample report: ${err.message}`);
+      alert(`Error uploading file: ${err.message}`);
     }
   };
 
@@ -162,12 +139,12 @@ export default function App() {
     <div className="min-h-screen bg-[#0D1117] text-[#E6EDF3] p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Top Header */}
-        <Header onLoadDemo={handleLoadDemo} />
+        <Header />
 
-        {/* Audit Input Form */}
+        {/* Audit Input Form with Interactive Navigation Tabs */}
         <AuditInput
           onStartAudit={handleStartAudit}
-          onUploadZip={handleUploadZip}
+          onUploadFile={handleUploadFile}
           isAuditing={isAuditing}
         />
 
