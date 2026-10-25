@@ -18,7 +18,7 @@ import requests
 logger = logging.getLogger("CodeAuditor.LLMEngine")
 
 # Default models
-GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest"]
+GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]
 OLLAMA_MODELS = ["qwen2.5-coder:1.5b", "qwen2.5-coder", "deepseek-coder:1.3b", "codellama"]
 
 
@@ -86,19 +86,25 @@ def generate_ai_remediation(
     )
 
     # 2. Try Google Gemini API
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    # Also check if key exists in config/constants or hardcoded fallback for local dev
-    if not gemini_key and os.path.exists(".env"):
+    keys_to_try = []
+    # Project .env key first
+    if os.path.exists(".env"):
         try:
             with open(".env", "r", encoding="utf-8") as f:
                 for line in f:
                     if line.strip().startswith("GEMINI_API_KEY="):
-                        gemini_key = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+                        k = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+                        if k and k not in keys_to_try:
+                            keys_to_try.append(k)
                         break
         except Exception:
             pass
 
-    if gemini_key:
+    env_os_key = os.getenv("GEMINI_API_KEY")
+    if env_os_key and env_os_key not in keys_to_try:
+        keys_to_try.append(env_os_key)
+
+    for gemini_key in keys_to_try:
         for model in GEMINI_MODELS:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
@@ -106,10 +112,7 @@ def generate_ai_remediation(
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
                         "temperature": 0.1,
-                        "maxOutputTokens": 2048,
-                        "thinkingConfig": {
-                            "thinkingBudget": 0
-                        }
+                        "maxOutputTokens": 2048
                     }
                 }
                 resp = requests.post(url, json=payload, timeout=12)

@@ -975,23 +975,85 @@ def _generate_contextual_fix(
             return f"# Grounded Fix ({cwe_id}): Use parameterized query with safe placeholder bindings\n" + code_fixed
 
     elif category == "Cross-site Scripting (XSS)":
+        if "DOMPurify.sanitize" in code:
+            return code
+
+        lines = code.splitlines()
+        fixed_lines = []
+        i = 0
+        changed_any = False
+
+        while i < len(lines):
+            line = lines[i]
+
+            # Case A: Single line innerHTML assignment
+            def replace_innerhtml_expr(m):
+                nonlocal changed_any
+                target = m.group(1)
+                expr = m.group(2).strip()
+                if expr.startswith("DOMPurify.sanitize"):
+                    return m.group(0)
+                changed_any = True
+                return f"{target}.innerHTML = DOMPurify.sanitize({expr})"
+
+            new_line = re.sub(
+                r'([a-zA-Z0-9_\$\[\]\.\(\)\'\"]+)\.innerHTML\s*=\s*([^;]+?)(?=\s*;|\s*return|\s*\})',
+                replace_innerhtml_expr,
+                line
+            )
+
+            # Case B: Multi-line innerHTML assignment opening: target.innerHTML = positions.map(p => {
+            if not changed_any or new_line == line:
+                multi_open = re.search(r'^\s*([a-zA-Z0-9_\$\[\]\.\(\)\'\"]+)\.innerHTML\s*=\s*(.+)$', line)
+                if multi_open and not line.strip().endswith(";"):
+                    target = multi_open.group(1)
+                    rhs_start = multi_open.group(2).strip()
+                    j = i + 1
+                    closed = False
+                    while j < len(lines):
+                        if ".join(" in lines[j] or lines[j].strip().endswith(";"):
+                            closed = True
+                            break
+                        j += 1
+
+                    if closed:
+                        changed_any = True
+                        lines[i] = re.sub(
+                            r'([a-zA-Z0-9_\$\[\]\.\(\)\'\"]+)\.innerHTML\s*=\s*(.+)$',
+                            r'\1.innerHTML = DOMPurify.sanitize(\2',
+                            lines[i]
+                        )
+                        if lines[j].rstrip().endswith(";"):
+                            lines[j] = re.sub(r';\s*$', ');', lines[j])
+                        else:
+                            lines[j] = lines[j] + ')'
+                        fixed_lines.append(lines[i])
+                        i += 1
+                        continue
+
+            fixed_lines.append(new_line)
+            i += 1
+
+        if changed_any:
+            return f"// Grounded Fix ({cwe_id}): Sanitize HTML markup with DOMPurify.sanitize() to prevent XSS\n" + "\n".join(fixed_lines)
+
         if ".innerHTML" in code:
-            if any(tag in code for tag in ("<tr", "<td", "<div", "<span", "<table", "<p", "</")):
-                return (
-                    f"// Grounded Fix ({cwe_id}): Use DOMPurify.sanitize() or document.createElement() to prevent XSS\n"
-                    f"// Example: element.innerHTML = DOMPurify.sanitize(htmlMarkup);\n"
-                    f"{code}"
-                )
             fixed = code.replace(".innerHTML", ".textContent")
             return f"// Grounded Fix ({cwe_id}): Use textContent instead of innerHTML to prevent script execution\n" + fixed
         elif ".outerHTML" in code:
-            return (
-                f"// Grounded Fix ({cwe_id}): Sanitize HTML markup or manipulate DOM nodes directly\n"
-                f"// Example: element.outerHTML = DOMPurify.sanitize(markup);\n"
-                f"{code}"
+            fixed = re.sub(
+                r'([a-zA-Z0-9_\$\[\]\.\(\)\'\"]+)\.outerHTML\s*=\s*(.+?)(;|$)',
+                r'\1.outerHTML = DOMPurify.sanitize(\2)\3',
+                code
             )
+            return f"// Grounded Fix ({cwe_id}): Sanitize markup with DOMPurify.sanitize() to prevent XSS\n" + fixed
         elif "document.write" in code:
-            return f"// Grounded Fix ({cwe_id}): Avoid document.write(); manipulate textContent on target element instead\n" + code
+            fixed = re.sub(
+                r'document\.write\s*\((.+?)\)',
+                r'document.write(DOMPurify.sanitize(\1))',
+                code
+            )
+            return f"// Grounded Fix ({cwe_id}): Avoid document.write(); sanitize output with DOMPurify\n" + fixed
 
     elif category == "Code Injection":
         if is_js_or_html:
@@ -1083,8 +1145,15 @@ def synthesize_fixes_node(state: AuditAgentState) -> Dict[str, Any]:
             except Exception:
                 pass
 
-        # Fallback to instantaneous deterministic AST patch generator
-        if not fix_code:
+        # Verify AI fix actually modified the vulnerable code; if not, use deterministic patch generator
+        is_effective = False
+        if fix_code:
+            clean_fix = re.sub(r'^\s*(//|#|/\*).*$', '', fix_code, flags=re.MULTILINE).strip()
+            clean_orig = re.sub(r'^\s*(//|#|/\*).*$', '', original_code, flags=re.MULTILINE).strip()
+            if clean_fix and clean_fix != clean_orig:
+                is_effective = True
+
+        if not is_effective:
             fix_code = _generate_contextual_fix(
                 category=category,
                 code=original_code,
