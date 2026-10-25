@@ -10,8 +10,7 @@ import {
   ChevronDown,
   ChevronUp,
   Target,
-  Sparkles,
-  WrapText
+  Sparkles
 } from 'lucide-react';
 
 /**
@@ -181,7 +180,6 @@ export default function DiffViewer({
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState('split'); // 'split' | 'unified'
   const [focusChanges, setFocusChanges] = useState(false); // only show changed hunks
-  const [wordWrap, setWordWrap] = useState(false); // wrap lines vs horizontal scroll
   const diffContainerRef = useRef(null);
 
   const { rows, rawDiff, delCount, addCount, firstChangedIndex } = useMemo(
@@ -340,20 +338,6 @@ export default function DiffViewer({
             </button>
           </div>
 
-          {/* Word Wrap Toggle */}
-          <button
-            onClick={() => setWordWrap(!wordWrap)}
-            className={`px-2 py-1 rounded text-[11px] font-mono transition flex items-center gap-1 border ${
-              wordWrap
-                ? 'bg-blue-950/70 text-blue-300 border-blue-800/80 font-bold'
-                : 'bg-[#21262D] text-gray-300 hover:text-white border-gray-700'
-            }`}
-            title={wordWrap ? 'Disable Word Wrap (Single Horizontal Scroll)' : 'Enable Word Wrap'}
-          >
-            <WrapText className={`w-3 h-3 ${wordWrap ? 'text-blue-400' : 'text-gray-400'}`} />
-            {wordWrap ? 'Wrap: On' : 'Wrap: Off'}
-          </button>
-
           {/* Copy Replacement Button */}
           <button
             onClick={handleCopy}
@@ -374,17 +358,23 @@ export default function DiffViewer({
         </div>
       </div>
 
-      {/* Diff Workspace Container: ONE unified scrollbar across the code block */}
+      {/* Diff Workspace Container: Side-by-side comparison with zero horizontal scroll */}
       <div
         ref={diffContainerRef}
-        className="max-h-[500px] overflow-auto select-text"
+        className="max-h-[500px] overflow-y-auto select-text overflow-x-hidden"
       >
         {viewMode === 'split' ? (
           /* ========================================================= */
-          /* SIDE-BY-SIDE SPLIT VIEW (TABLE-BASED, UNIFIED SCROLLING)  */
+          /* SIDE-BY-SIDE SPLIT VIEW (TABLE-FIXED, FULL WRAP, NO SCROLL) */
           /* ========================================================= */
-          <div className="w-full min-w-full">
-            <table className="w-full border-collapse font-mono text-xs">
+          <div className="w-full">
+            <table className="w-full table-fixed border-collapse font-mono text-xs">
+              <colgroup>
+                <col className="w-12" />
+                <col className="w-[calc(50%-3rem)]" />
+                <col className="w-12" />
+                <col className="w-[calc(50%-3rem)]" />
+              </colgroup>
               <thead className="sticky top-0 z-10 bg-[#090D13] border-b border-[#30363D] text-[11px]">
                 <tr>
                   <th colSpan="2" className="w-1/2 px-3 py-1.5 text-left text-rose-300 font-semibold bg-rose-950/30 border-r border-[#30363D]">
@@ -439,17 +429,17 @@ export default function DiffViewer({
                     >
                       {/* Left Gutter */}
                       <td
-                        className={`w-14 shrink-0 px-2 py-0.5 select-none text-right font-mono text-[11px] border-r border-gray-800/60 bg-[#0D1117]/60 align-top ${
+                        className={`w-12 shrink-0 px-1.5 py-1 select-none text-right font-mono text-[11px] border-r border-gray-800/60 bg-[#0D1117]/60 align-top ${
                           isLeftChanged ? 'border-l-4 border-l-rose-500' : ''
                         }`}
                       >
                         {row.left ? (
-                          <div className="flex items-center justify-end gap-1.5">
+                          <div className="flex items-center justify-end gap-1">
                             <span className={isLeftChanged ? 'text-rose-400 font-bold' : 'text-gray-600'}>
                               {row.left.lineNum}
                             </span>
                             <span
-                              className={`w-3.5 text-center font-bold text-xs ${
+                              className={`w-3 text-center font-bold text-xs ${
                                 isLeftChanged ? 'text-rose-400' : 'text-transparent'
                               }`}
                             >
@@ -463,9 +453,9 @@ export default function DiffViewer({
 
                       {/* Left Code Text */}
                       <td
-                        className={`px-3 py-0.5 border-r border-[#30363D] align-top font-mono text-xs leading-relaxed ${
-                          wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'
-                        } ${isLeftChanged ? 'bg-rose-950/40 text-rose-200 font-medium' : 'text-gray-400'}`}
+                        className={`px-3 py-1 border-r border-[#30363D] align-top font-mono text-xs leading-relaxed whitespace-pre-wrap break-words break-all ${
+                          isLeftChanged ? 'bg-rose-950/40 text-rose-200 font-medium' : 'text-gray-400'
+                        }`}
                       >
                         {row.left ? (
                           row.type === 'modified' && row.right ? (
@@ -482,17 +472,17 @@ export default function DiffViewer({
 
                       {/* Right Gutter */}
                       <td
-                        className={`w-14 shrink-0 px-2 py-0.5 select-none text-right font-mono text-[11px] border-r border-gray-800/60 bg-[#0D1117]/60 align-top ${
+                        className={`w-12 shrink-0 px-1.5 py-1 select-none text-right font-mono text-[11px] border-r border-gray-800/60 bg-[#0D1117]/60 align-top ${
                           isRightChanged ? 'border-l-4 border-l-emerald-500' : ''
                         }`}
                       >
                         {row.right ? (
-                          <div className="flex items-center justify-end gap-1.5">
+                          <div className="flex items-center justify-end gap-1">
                             <span className={isRightChanged ? 'text-emerald-400 font-bold' : 'text-gray-600'}>
                               {row.right.lineNum}
                             </span>
                             <span
-                              className={`w-3.5 text-center font-bold text-xs ${
+                              className={`w-3 text-center font-bold text-xs ${
                                 isRightChanged ? 'text-emerald-400' : 'text-transparent'
                               }`}
                             >
@@ -506,9 +496,9 @@ export default function DiffViewer({
 
                       {/* Right Code Text */}
                       <td
-                        className={`px-3 py-0.5 align-top font-mono text-xs leading-relaxed ${
-                          wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'
-                        } ${isRightChanged ? 'bg-emerald-950/40 text-emerald-200 font-medium' : 'text-gray-400'}`}
+                        className={`px-3 py-1 align-top font-mono text-xs leading-relaxed whitespace-pre-wrap break-words break-all ${
+                          isRightChanged ? 'bg-emerald-950/40 text-emerald-200 font-medium' : 'text-gray-400'
+                        }`}
                       >
                         {row.right ? (
                           row.type === 'modified' && row.left ? (
@@ -530,10 +520,16 @@ export default function DiffViewer({
           </div>
         ) : (
           /* ========================================================= */
-          /* UNIFIED GIT DIFF VIEW (TABLE-BASED, UNIFIED SCROLLING)    */
+          /* UNIFIED GIT DIFF VIEW (TABLE-FIXED, FULL WRAP)           */
           /* ========================================================= */
-          <div className="w-full min-w-full">
-            <table className="w-full border-collapse font-mono text-xs bg-[#090D13]">
+          <div className="w-full">
+            <table className="w-full table-fixed border-collapse font-mono text-xs bg-[#090D13]">
+              <colgroup>
+                <col className="w-12" />
+                <col className="w-12" />
+                <col className="w-6" />
+                <col className="w-[calc(100%-7.5rem)]" />
+              </colgroup>
               <tbody className="divide-y divide-gray-900/60">
                 {rawDiff.map((item, idx) => {
                   const isFirst =
@@ -543,14 +539,14 @@ export default function DiffViewer({
                   if (item.type === 'unchanged') {
                     return (
                       <tr key={`uni-${idx}`} className="hover:bg-white/[0.02] text-gray-400 leading-relaxed">
-                        <td className="w-12 px-1 py-0.5 text-right text-gray-600 border-r border-gray-800/60 select-none text-[11px] align-top">
+                        <td className="w-12 px-1 py-1 text-right text-gray-600 border-r border-gray-800/60 select-none text-[11px] align-top">
                           {(lineStart || 1) + item.oldIndex}
                         </td>
-                        <td className="w-12 px-1 py-0.5 text-right text-gray-600 border-r border-gray-800/60 select-none text-[11px] align-top">
+                        <td className="w-12 px-1 py-1 text-right text-gray-600 border-r border-gray-800/60 select-none text-[11px] align-top">
                           {item.newIndex + 1}
                         </td>
                         <td className="w-6 text-center text-gray-600 select-none align-top"> </td>
-                        <td className={`px-3 py-0.5 align-top font-mono ${wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
+                        <td className="px-3 py-1 align-top font-mono whitespace-pre-wrap break-words break-all">
                           {item.oldLine}
                         </td>
                       </tr>
@@ -564,16 +560,16 @@ export default function DiffViewer({
                         data-first-change={isFirst ? 'true' : undefined}
                         className="bg-rose-950/40 border-l-4 border-rose-500 text-rose-200 font-medium leading-relaxed"
                       >
-                        <td className="w-12 px-1 py-0.5 text-right text-rose-400/80 border-r border-rose-900/60 select-none text-[11px] font-bold align-top">
+                        <td className="w-12 px-1 py-1 text-right text-rose-400/80 border-r border-rose-900/60 select-none text-[11px] font-bold align-top">
                           {(lineStart || 1) + item.oldIndex}
                         </td>
-                        <td className="w-12 px-1 py-0.5 text-right text-gray-700 border-r border-rose-900/60 select-none text-[11px] align-top">
+                        <td className="w-12 px-1 py-1 text-right text-gray-700 border-r border-rose-900/60 select-none text-[11px] align-top">
                           -
                         </td>
                         <td className="w-6 text-center text-rose-400 font-bold select-none align-top">
                           -
                         </td>
-                        <td className={`px-3 py-0.5 align-top font-mono font-bold ${wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
+                        <td className="px-3 py-1 align-top font-mono font-bold whitespace-pre-wrap break-words break-all">
                           {item.oldLine}
                         </td>
                       </tr>
@@ -587,16 +583,16 @@ export default function DiffViewer({
                         data-first-change={isFirst ? 'true' : undefined}
                         className="bg-emerald-950/40 border-l-4 border-emerald-500 text-emerald-200 font-medium leading-relaxed"
                       >
-                        <td className="w-12 px-1 py-0.5 text-right text-gray-700 border-r border-emerald-900/60 select-none text-[11px] align-top">
+                        <td className="w-12 px-1 py-1 text-right text-gray-700 border-r border-emerald-900/60 select-none text-[11px] align-top">
                           +
                         </td>
-                        <td className="w-12 px-1 py-0.5 text-right text-emerald-400/80 border-r border-emerald-900/60 select-none text-[11px] font-bold align-top">
+                        <td className="w-12 px-1 py-1 text-right text-emerald-400/80 border-r border-emerald-900/60 select-none text-[11px] font-bold align-top">
                           {item.newIndex + 1}
                         </td>
                         <td className="w-6 text-center text-emerald-400 font-bold select-none align-top">
                           +
                         </td>
-                        <td className={`px-3 py-0.5 align-top font-mono font-bold ${wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
+                        <td className="px-3 py-1 align-top font-mono font-bold whitespace-pre-wrap break-words break-all">
                           {item.newLine}
                         </td>
                       </tr>
@@ -612,23 +608,19 @@ export default function DiffViewer({
       </div>
 
       {/* Footer Info Legend */}
-      <div className="bg-[#161B22] px-4 py-1.5 border-t border-[#30363D] flex items-center justify-between text-[11px] text-gray-500 font-mono">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1">
+      <div className="bg-[#161B22] px-4 py-2 border-t border-[#30363D] flex items-center justify-between text-[11px] text-gray-500 font-mono">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm bg-rose-500/80 inline-block" />
-            <span className="text-gray-400">Vulnerable / Replaced Line</span>
+            <span className="text-gray-300 font-medium">Vulnerable / Replaced Line</span>
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80 inline-block" />
-            <span className="text-gray-400">Grounded Fix</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="px-1 rounded bg-emerald-800 text-white text-[10px] font-bold">token</span>
-            <span className="text-gray-400">Exact Changed Identifier</span>
+            <span className="text-gray-300 font-medium">Grounded Fix</span>
           </span>
         </div>
         <div className="text-gray-500 text-[10px]">
-          {wordWrap ? 'Word wrap enabled (no horizontal scroll)' : 'Scroll or drag horizontally for wider expressions'}
+          Side-by-side synchronized view
         </div>
       </div>
     </div>

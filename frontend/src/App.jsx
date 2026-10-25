@@ -190,9 +190,9 @@ export default function App() {
           </main>
         )}
 
-        {/* Footer */}
-        <footer className="text-center text-xs text-gray-500 py-6 border-t border-gray-800">
-          Codebase Architecture &amp; Risk Auditor • 7th Semester Major Project (Academic Year 2026–2027) • Built with React, React Flow, FastAPI, CodeBERT, FAISS &amp; LangGraph
+        {/* Clean Minimal Footer */}
+        <footer className="text-center text-xs text-gray-600 py-4 font-mono">
+          Codebase Architecture &amp; Risk Auditor • Active Security Session
         </footer>
       </div>
     </div>
