@@ -171,7 +171,7 @@ export default function App() {
             </section>
 
             {/* Interactive React Flow Dependency Call-Graph */}
-            <DependencyFlow graph={report.dependency_graph} />
+            <DependencyFlow graph={report.dependency_graph} findings={report.findings || []} />
 
             {/* Filterable Findings & Diff Reviewer */}
             <FindingsTable findings={report.findings || []} />

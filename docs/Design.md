@@ -85,7 +85,17 @@ The **Codebase Architecture & Risk Auditor** features an engineer-first, profess
 - One-click "Copy Replacement Fix" button for seamless developer workflow.
 
 ### 7. Interactive Dependency Call Graph (`DependencyFlow.jsx`)
-- Built with React Flow.
-- Renders the NetworkX directed call graph.
-- Nodes represent functions and modules; edges represent call invocations and imports.
-- Node risk coloring immediately identifies high blast-radius components.
+- Built with React Flow (`@xyflow/react`).
+- **Hierarchical Folder Architecture (Default View)**:
+  - Intelligently collapses complex multi-thousand function graphs into clean, modular top-level directory nodes (e.g., `app/api`, `app/db`, `alembic`, `(root)`).
+  - Cross-folder edges depict aggregated architectural dependencies with invocation weights and animated flows.
+  - Folder node borders and glow rings dynamically indicate aggregate security posture: Red/Rose for Critical/High findings, Amber for Medium, and Emerald for Clean.
+- **Interactive 2-Level Drilldown Modal**:
+  - **Level 1 (Folder Overview)**: Clicking any folder node opens a sleek slide-in/modal displaying:
+    - Connected dependencies ("Calls into...", "Called by...").
+    - Search filter across all files in that directory.
+    - Card grid of files with their individual function counts and risk badges.
+  - **Level 2 (File Deep Dive)**: Clicking any file card transitions to a breadcrumb-backed view (`Map > 📁 Folder > 📄 File`):
+    - Function search filter and list of all functions with exact line bounds (`L42–L58`).
+    - Embedded Vulnerability Diffs: Functions with findings display the CWE alert, original vulnerable code, and verified AI remediation with one-click "Copy Fix".
+- **Dual View Modes**: Seamless toggle between `📁 Folders Architecture` (clean high-level design) and `🌐 Micro-Graph` (complete raw function node network).

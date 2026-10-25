@@ -42,6 +42,21 @@
 
 ## Detailed Progress Log
 
+### [2026-10-25] — Hierarchical Folder Map & Interactive Drilldown Modal
+- **Hierarchical Graph Engine in `frontend/src/components/DependencyFlow.jsx`**:
+  - Replaced the unwieldy 800+ raw node graph with an aggregated **Folder Architecture View**.
+  - Dynamically computes directory modules (e.g., `app/api/routes`, `app/db`, `alembic`, `(root)`), grouping files, functions, and vulnerabilities.
+  - Aggregates cross-folder call and import dependencies with weighted, animated edges and invocation count badges.
+  - Added security risk indicators on folder nodes: Red/Rose border and glow for Critical/High findings, Amber for Medium, and Emerald for Clean.
+- **Interactive 2-Level Drilldown Modal**:
+  - **Level 1 (Folder View)**: Displays folder path, files count, functions count, risk status, connected dependencies ("Calls into...", "Called by..."), file search filter, and cards for all files in the folder.
+  - **Level 2 (File View)**: Breadcrumb navigation (`Map > 📁 Folder > 📄 File`), back button, search filter, and list of all functions with exact line bounds (`L42-L58`) and risk scores.
+  - **In-Modal Vulnerability Diffs**: If a function has an associated security finding, it displays an alert card with the CWE description, original vulnerable code, and recommended replacement fix with a one-click `Copy Fix` button.
+  - **Dual View Modes**: Added switcher between `📁 Folders Architecture` (default clean view) and `🌐 Micro-Graph` (detailed raw node view).
+- **Gemini 2.5 Flash Latency & Thinking Optimization**:
+  - Configured `thinkingConfig: {"thinkingBudget": 0}` in `agent/llm_engine.py` to eliminate thinking-token overhead.
+  - Increased `timeout=12` and `maxOutputTokens=2048` to guarantee complete, uninterrupted code replacements without timeouts.
+
 ### [2026-10-25] — Concurrency Acceleration & Polyglot Syntax Integration
 - Implemented `check_polyglot_syntax` in `agent/nodes.py` covering Python, JavaScript, Java, C, and C++.
 - Expanded vulnerability rules to cover all 18 CWE Top 25 & OWASP entries in `rag_engine/corpus/cwe_owasp_knowledge_base.json`.

@@ -159,7 +159,7 @@ D:\7th SEM MAJOR\
 │   │   │   ├── MetricCards.jsx         # Summary cards (Total, Critical, High, Medium, Low)
 │   │   │   ├── FindingsTable.jsx       # Interactive findings table with search & filters
 │   │   │   ├── DiffViewer.jsx          # Side-by-side original vs fixed code diff viewer
-│   │   │   ├── DependencyFlow.jsx      # React Flow interactive dependency call graph
+│   │   │   ├── DependencyFlow.jsx      # Hierarchical folder architecture & 2-level drilldown modal (React Flow)
 │   │   │   ├── ProgressBar.jsx         # Multi-stage animated pipeline progress indicator
 │   │   │   └── Header.jsx              # Navigation header with system health status
 │   │   └── index.css                   # Tailwind CSS styling and theme definitions
