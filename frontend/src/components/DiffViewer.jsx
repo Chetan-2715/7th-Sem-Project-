@@ -367,68 +367,58 @@ export default function DiffViewer({
           /* ========================================================= */
           /* SIDE-BY-SIDE SPLIT VIEW (TABLE-FIXED, FULL WRAP, NO SCROLL) */
           /* ========================================================= */
-          <div className="w-full">
-            <table className="w-full table-fixed border-collapse font-mono text-xs">
-              <colgroup>
-                <col className="w-12" />
-                <col className="w-[calc(50%-3rem)]" />
-                <col className="w-12" />
-                <col className="w-[calc(50%-3rem)]" />
-              </colgroup>
-              <thead className="sticky top-0 z-10 bg-[#090D13] border-b border-[#30363D] text-[11px]">
-                <tr>
-                  <th colSpan="2" className="w-1/2 px-3 py-1.5 text-left text-rose-300 font-semibold bg-rose-950/30 border-r border-[#30363D]">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <X className="w-3.5 h-3.5 text-rose-400" />
-                        Original Vulnerable Code
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 uppercase font-bold">
-                        Risk Detected
-                      </span>
-                    </div>
-                  </th>
-                  <th colSpan="2" className="w-1/2 px-3 py-1.5 text-left text-emerald-300 font-semibold bg-emerald-950/30">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        Grounded Replacement Patch
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 uppercase font-bold">
-                        Secure Fix
-                      </span>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-900/60 bg-[#090D13]">
-                {displayRows.map((row, idx) => {
-                  if (row.isFold) {
-                    return (
-                      <tr key={`fold-${row.startIndex}`}>
-                        <td
-                          colSpan="4"
-                          onClick={() => setFocusChanges(false)}
-                          className="px-4 py-1.5 bg-[#161B22]/80 hover:bg-[#21262D] cursor-pointer text-center text-gray-500 hover:text-gray-300 text-[11px] font-mono transition border-y border-[#30363D]"
-                        >
-                          ⋯┄⋯ @@ {row.count} unchanged lines hidden (click to expand) @@ ⋯┄⋯
-                        </td>
-                      </tr>
-                    );
-                  }
+          <div className="w-full font-mono text-xs">
+            {/* Header: Left and Right panes */}
+            <div className="sticky top-0 z-10 grid grid-cols-2 bg-[#090D13] border-b border-[#30363D] text-[11px]">
+              <div className="px-3 py-1.5 text-left text-rose-300 font-semibold bg-rose-950/30 border-r border-[#30363D] flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <X className="w-3.5 h-3.5 text-rose-400" />
+                  Original Vulnerable Code
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 uppercase font-bold">
+                  Risk Detected
+                </span>
+              </div>
+              <div className="px-3 py-1.5 text-left text-emerald-300 font-semibold bg-emerald-950/30 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  Grounded Replacement Patch
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 uppercase font-bold">
+                  Secure Fix
+                </span>
+              </div>
+            </div>
 
-                  const isFirstChange = row.originalIndex === firstChangedIndex;
-                  const isLeftChanged = row.type === 'deleted' || row.type === 'modified';
-                  const isRightChanged = row.type === 'added' || row.type === 'modified';
-
+            <div className="divide-y divide-gray-900/60 bg-[#090D13]">
+              {displayRows.map((row, idx) => {
+                if (row.isFold) {
                   return (
-                    <tr
-                      key={`row-${row.originalIndex ?? idx}`}
-                      data-first-change={isFirstChange ? 'true' : undefined}
-                      className="group hover:bg-white/[0.02]"
-                    >
-                      {/* Left Gutter */}
-                      <td
+                    <div key={`fold-${row.startIndex}`}>
+                      <div
+                        onClick={() => setFocusChanges(false)}
+                        className="px-4 py-1.5 bg-[#161B22]/80 hover:bg-[#21262D] cursor-pointer text-center text-gray-500 hover:text-gray-300 text-[11px] font-mono transition border-y border-[#30363D]"
+                      >
+                        ⋯┄⋯ @@ {row.count} unchanged lines hidden (click to expand) @@ ⋯┄⋯
+                      </div>
+                    </div>
+                  );
+                }
+
+                const isFirstChange = row.originalIndex === firstChangedIndex;
+                const isLeftChanged = row.type === 'deleted' || row.type === 'modified';
+                const isRightChanged = row.type === 'added' || row.type === 'modified';
+
+                return (
+                  <div
+                    key={`row-${row.originalIndex ?? idx}`}
+                    data-first-change={isFirstChange ? 'true' : undefined}
+                    className="grid grid-cols-2 group hover:bg-white/[0.02]"
+                  >
+                    {/* Left Pane (Strictly 50% width) */}
+                    <div className="flex min-w-0 border-r border-[#30363D]">
+                      {/* Left Gutter: STRICTLY 48px width, no expansion */}
+                      <div
                         className={`w-12 shrink-0 px-1.5 py-1 select-none text-right font-mono text-[11px] border-r border-gray-800/60 bg-[#0D1117]/60 align-top ${
                           isLeftChanged ? 'border-l-4 border-l-rose-500' : ''
                         }`}
@@ -449,11 +439,11 @@ export default function DiffViewer({
                         ) : (
                           <span className="text-gray-800">•</span>
                         )}
-                      </td>
+                      </div>
 
                       {/* Left Code Text */}
-                      <td
-                        className={`px-3 py-1 border-r border-[#30363D] align-top font-mono text-xs leading-relaxed whitespace-pre-wrap break-words break-all ${
+                      <div
+                        className={`flex-1 min-w-0 px-3 py-1 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words break-all ${
                           isLeftChanged ? 'bg-rose-950/40 text-rose-200 font-medium' : 'text-gray-400'
                         }`}
                       >
@@ -468,10 +458,13 @@ export default function DiffViewer({
                         ) : (
                           <span className="text-gray-800 select-none italic text-[11px]"> </span>
                         )}
-                      </td>
+                      </div>
+                    </div>
 
-                      {/* Right Gutter */}
-                      <td
+                    {/* Right Pane (Strictly 50% width) */}
+                    <div className="flex min-w-0">
+                      {/* Right Gutter: STRICTLY 48px width, no expansion */}
+                      <div
                         className={`w-12 shrink-0 px-1.5 py-1 select-none text-right font-mono text-[11px] border-r border-gray-800/60 bg-[#0D1117]/60 align-top ${
                           isRightChanged ? 'border-l-4 border-l-emerald-500' : ''
                         }`}
@@ -492,11 +485,11 @@ export default function DiffViewer({
                         ) : (
                           <span className="text-gray-800">•</span>
                         )}
-                      </td>
+                      </div>
 
                       {/* Right Code Text */}
-                      <td
-                        className={`px-3 py-1 align-top font-mono text-xs leading-relaxed whitespace-pre-wrap break-words break-all ${
+                      <div
+                        className={`flex-1 min-w-0 px-3 py-1 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words break-all ${
                           isRightChanged ? 'bg-emerald-950/40 text-emerald-200 font-medium' : 'text-gray-400'
                         }`}
                       >
@@ -511,98 +504,88 @@ export default function DiffViewer({
                         ) : (
                           <span className="text-gray-800 select-none italic text-[11px]"> </span>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : (
           /* ========================================================= */
-          /* UNIFIED GIT DIFF VIEW (TABLE-FIXED, FULL WRAP)           */
+          /* UNIFIED GIT DIFF VIEW (FLEX-BASED, FULL WRAP, NO SCROLL)  */
           /* ========================================================= */
-          <div className="w-full">
-            <table className="w-full table-fixed border-collapse font-mono text-xs bg-[#090D13]">
-              <colgroup>
-                <col className="w-12" />
-                <col className="w-12" />
-                <col className="w-6" />
-                <col className="w-[calc(100%-7.5rem)]" />
-              </colgroup>
-              <tbody className="divide-y divide-gray-900/60">
-                {rawDiff.map((item, idx) => {
-                  const isFirst =
-                    item.type !== 'unchanged' &&
-                    rawDiff.findIndex((x) => x.type !== 'unchanged') === idx;
+          <div className="w-full divide-y divide-gray-900/60 bg-[#090D13] font-mono text-xs">
+            {rawDiff.map((item, idx) => {
+              const isFirst =
+                item.type !== 'unchanged' &&
+                rawDiff.findIndex((x) => x.type !== 'unchanged') === idx;
 
-                  if (item.type === 'unchanged') {
-                    return (
-                      <tr key={`uni-${idx}`} className="hover:bg-white/[0.02] text-gray-400 leading-relaxed">
-                        <td className="w-12 px-1 py-1 text-right text-gray-600 border-r border-gray-800/60 select-none text-[11px] align-top">
-                          {(lineStart || 1) + item.oldIndex}
-                        </td>
-                        <td className="w-12 px-1 py-1 text-right text-gray-600 border-r border-gray-800/60 select-none text-[11px] align-top">
-                          {item.newIndex + 1}
-                        </td>
-                        <td className="w-6 text-center text-gray-600 select-none align-top"> </td>
-                        <td className="px-3 py-1 align-top font-mono whitespace-pre-wrap break-words break-all">
-                          {item.oldLine}
-                        </td>
-                      </tr>
-                    );
-                  }
+              if (item.type === 'unchanged') {
+                return (
+                  <div key={`uni-${idx}`} className="flex items-stretch hover:bg-white/[0.02] text-gray-400 leading-relaxed">
+                    <div className="w-12 shrink-0 px-1 py-1 text-right text-gray-600 border-r border-gray-800/60 select-none text-[11px]">
+                      {(lineStart || 1) + item.oldIndex}
+                    </div>
+                    <div className="w-12 shrink-0 px-1 py-1 text-right text-gray-600 border-r border-gray-800/60 select-none text-[11px]">
+                      {item.newIndex + 1}
+                    </div>
+                    <div className="w-6 shrink-0 text-center text-gray-600 select-none"> </div>
+                    <div className="flex-1 min-w-0 px-3 py-1 font-mono whitespace-pre-wrap break-words break-all">
+                      {item.oldLine}
+                    </div>
+                  </div>
+                );
+              }
 
-                  if (item.type === 'deleted') {
-                    return (
-                      <tr
-                        key={`uni-${idx}`}
-                        data-first-change={isFirst ? 'true' : undefined}
-                        className="bg-rose-950/40 border-l-4 border-rose-500 text-rose-200 font-medium leading-relaxed"
-                      >
-                        <td className="w-12 px-1 py-1 text-right text-rose-400/80 border-r border-rose-900/60 select-none text-[11px] font-bold align-top">
-                          {(lineStart || 1) + item.oldIndex}
-                        </td>
-                        <td className="w-12 px-1 py-1 text-right text-gray-700 border-r border-rose-900/60 select-none text-[11px] align-top">
-                          -
-                        </td>
-                        <td className="w-6 text-center text-rose-400 font-bold select-none align-top">
-                          -
-                        </td>
-                        <td className="px-3 py-1 align-top font-mono font-bold whitespace-pre-wrap break-words break-all">
-                          {item.oldLine}
-                        </td>
-                      </tr>
-                    );
-                  }
+              if (item.type === 'deleted') {
+                return (
+                  <div
+                    key={`uni-${idx}`}
+                    data-first-change={isFirst ? 'true' : undefined}
+                    className="flex items-stretch bg-rose-950/40 border-l-4 border-rose-500 text-rose-200 font-medium leading-relaxed"
+                  >
+                    <div className="w-12 shrink-0 px-1 py-1 text-right text-rose-400/80 border-r border-rose-900/60 select-none text-[11px] font-bold">
+                      {(lineStart || 1) + item.oldIndex}
+                    </div>
+                    <div className="w-12 shrink-0 px-1 py-1 text-right text-gray-700 border-r border-rose-900/60 select-none text-[11px]">
+                      -
+                    </div>
+                    <div className="w-6 shrink-0 text-center text-rose-400 font-bold select-none">
+                      -
+                    </div>
+                    <div className="flex-1 min-w-0 px-3 py-1 font-mono font-bold whitespace-pre-wrap break-words break-all">
+                      {item.oldLine}
+                    </div>
+                  </div>
+                );
+              }
 
-                  if (item.type === 'added') {
-                    return (
-                      <tr
-                        key={`uni-${idx}`}
-                        data-first-change={isFirst ? 'true' : undefined}
-                        className="bg-emerald-950/40 border-l-4 border-emerald-500 text-emerald-200 font-medium leading-relaxed"
-                      >
-                        <td className="w-12 px-1 py-1 text-right text-gray-700 border-r border-emerald-900/60 select-none text-[11px] align-top">
-                          +
-                        </td>
-                        <td className="w-12 px-1 py-1 text-right text-emerald-400/80 border-r border-emerald-900/60 select-none text-[11px] font-bold align-top">
-                          {item.newIndex + 1}
-                        </td>
-                        <td className="w-6 text-center text-emerald-400 font-bold select-none align-top">
-                          +
-                        </td>
-                        <td className="px-3 py-1 align-top font-mono font-bold whitespace-pre-wrap break-words break-all">
-                          {item.newLine}
-                        </td>
-                      </tr>
-                    );
-                  }
+              if (item.type === 'added') {
+                return (
+                  <div
+                    key={`uni-${idx}`}
+                    data-first-change={isFirst ? 'true' : undefined}
+                    className="flex items-stretch bg-emerald-950/40 border-l-4 border-emerald-500 text-emerald-200 font-medium leading-relaxed"
+                  >
+                    <div className="w-12 shrink-0 px-1 py-1 text-right text-gray-700 border-r border-emerald-900/60 select-none text-[11px]">
+                      +
+                    </div>
+                    <div className="w-12 shrink-0 px-1 py-1 text-right text-emerald-400/80 border-r border-emerald-900/60 select-none text-[11px] font-bold">
+                      {item.newIndex + 1}
+                    </div>
+                    <div className="w-6 shrink-0 text-center text-emerald-400 font-bold select-none">
+                      +
+                    </div>
+                    <div className="flex-1 min-w-0 px-3 py-1 font-mono font-bold whitespace-pre-wrap break-words break-all">
+                      {item.newLine}
+                    </div>
+                  </div>
+                );
+              }
 
-                  return null;
-                })}
-              </tbody>
-            </table>
+              return null;
+            })}
           </div>
         )}
       </div>

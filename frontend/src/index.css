@@ -73,3 +73,112 @@ body {
   body { background-color: #FFFFFF !important; color: #000000 !important; }
   .no-print { display: none !important; }
 }
+
+/* ========================================================================= */
+/* UIVERSE LASER SCAN STAGE LOADER ANIMATIONS                                */
+/* ========================================================================= */
+.uiverse-loader {
+  max-width: fit-content;
+  color: rgb(242, 255, 240);
+  font-size: clamp(28px, 5vw, 50px);
+  line-height: 1.2;
+  position: relative;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  user-select: none;
+  text-shadow: 0 0 25px rgba(255, 130, 130, 0.4);
+}
+
+.uiverse-loader span {
+  display: inline-block;
+  animation: uiverse-cut 2s infinite;
+  transition: 1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+.uiverse-loader:hover {
+  color: #fcffdf;
+}
+
+.uiverse-loader::after {
+  position: absolute;
+  content: "";
+  width: 100%;
+  height: 6px;
+  border-radius: 4px;
+  background-color: #ff828291;
+  top: 0px;
+  filter: blur(10px);
+  animation: uiverse-scan 2s infinite;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  transition: 1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.uiverse-loader::before {
+  position: absolute;
+  content: "";
+  width: 100%;
+  height: 5px;
+  border-radius: 4px;
+  background-color: #ff8282;
+  top: 0px;
+  animation: uiverse-scan 2s infinite;
+  left: 0;
+  z-index: 10;
+  filter: opacity(0.9);
+  pointer-events: none;
+  transition: 1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes uiverse-scan {
+  0% {
+    top: 0px;
+  }
+  25% {
+    top: calc(100% - 5px);
+  }
+  50% {
+    top: 0px;
+  }
+  75% {
+    top: calc(100% - 5px);
+  }
+  100% {
+    top: 0px;
+  }
+}
+
+@keyframes uiverse-cut {
+  0% {
+    clip-path: inset(0 0 0 0);
+  }
+  25% {
+    clip-path: inset(100% 0 0 0);
+  }
+  50% {
+    clip-path: inset(0 0 100% 0);
+  }
+  75% {
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}

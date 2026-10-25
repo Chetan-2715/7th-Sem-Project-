@@ -126,64 +126,55 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
   };
 
   return (
-    <section className="bg-[#161B22] border border-[#30363D] rounded-lg p-6 shadow-sm no-print">
-      {/* Top Interactive Navigation Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#30363D] pb-4 mb-5 gap-3">
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-200">
-            Initiate Security Audit
-          </h2>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Choose an input source to scan for architecture &amp; security risks
-          </p>
-        </div>
+    <section className="bg-[#161B22] border border-[#30363D] rounded-xl p-6 shadow-sm no-print">
+      {/* Top Full-Width Segmented Tab Bar: Git | ZIP | Code */}
+      <div className="grid grid-cols-3 p-1.5 bg-[#090D13] border border-gray-800 rounded-xl mb-6 shadow-inner">
+        {/* Tab 1: Git */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('github')}
+          className={`relative flex items-center justify-center gap-2.5 py-2.5 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 ease-out select-none ${
+            activeTab === 'github'
+              ? 'bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400/40 scale-[1.01]'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]/70 border border-transparent'
+          }`}
+        >
+          <Github className={`w-4 h-4 transition-transform duration-300 ${activeTab === 'github' ? 'scale-110 text-white' : 'text-gray-400'}`} />
+          <span>Git</span>
+        </button>
 
-        {/* Navigation Tabs */}
-        <div className="inline-flex p-1 bg-[#090D13] border border-[#30363D] rounded-lg">
-          <button
-            type="button"
-            onClick={() => setActiveTab('github')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-              activeTab === 'github'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]'
-            }`}
-          >
-            <Github className="w-3.5 h-3.5" />
-            GitHub Link
-          </button>
+        {/* Tab 2: ZIP */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('upload')}
+          className={`relative flex items-center justify-center gap-2.5 py-2.5 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 ease-out select-none ${
+            activeTab === 'upload'
+              ? 'bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400/40 scale-[1.01]'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]/70 border border-transparent'
+          }`}
+        >
+          <UploadCloud className={`w-4 h-4 transition-transform duration-300 ${activeTab === 'upload' ? 'scale-110 text-white' : 'text-gray-400'}`} />
+          <span>ZIP</span>
+        </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('upload')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-              activeTab === 'upload'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]'
-            }`}
-          >
-            <UploadCloud className="w-3.5 h-3.5" />
-            ZIP / File Upload
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('raw')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-              activeTab === 'raw'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]'
-            }`}
-          >
-            <Code2 className="w-3.5 h-3.5" />
-            Raw Code
-          </button>
-        </div>
+        {/* Tab 3: Code */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('raw')}
+          className={`relative flex items-center justify-center gap-2.5 py-2.5 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 ease-out select-none ${
+            activeTab === 'raw'
+              ? 'bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400/40 scale-[1.01]'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]/70 border border-transparent'
+          }`}
+        >
+          <Code2 className={`w-4 h-4 transition-transform duration-300 ${activeTab === 'raw' ? 'scale-110 text-white' : 'text-gray-400'}`} />
+          <span>Code</span>
+        </button>
       </div>
 
       {/* Tab 1: GitHub Repository Link */}
       {activeTab === 'github' && (
-        <form onSubmit={handleGithubSubmit} className="space-y-4">
+        <form onSubmit={handleGithubSubmit} className="space-y-4 animate-fade-in">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             <div className="md:col-span-9">
               <label className="block text-xs font-medium text-gray-400 mb-1.5">
@@ -228,7 +219,7 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
 
       {/* Tab 2: Drag and Drop Box for ZIP or Single Code File */}
       {activeTab === 'upload' && (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-fade-in">
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -318,7 +309,7 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
 
       {/* Tab 3: Raw Code Paste Box */}
       {activeTab === 'raw' && (
-        <div className="space-y-3">
+        <div className="space-y-3 animate-fade-in">
           <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
             <label className="text-xs font-medium text-gray-400">
               Paste Raw Code Snippet (Formatting &amp; indentation preserved)
