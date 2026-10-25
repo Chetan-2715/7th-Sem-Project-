@@ -55,7 +55,8 @@ class AuditAgentOrchestrator:
         raw_files: List[Dict[str, Any]],
         progress_callback: Optional[Callable[[int, str, str], None]] = None,
         enable_rag: bool = True,
-        enable_ml: bool = True
+        enable_ml: bool = True,
+        is_raw_code: bool = False
     ) -> AuditResult:
         """
         Executes the agent workflow sequentially over ingested files.
@@ -70,6 +71,7 @@ class AuditAgentOrchestrator:
             "grounded_findings": [],
             "enable_rag": enable_rag,
             "enable_ml": enable_ml,
+            "is_raw_code": is_raw_code,
             "errors": []
         }
 

@@ -43,10 +43,11 @@ def check_polyglot_syntax(file_info: Dict[str, Any]) -> List[Dict[str, Any]]:
     errors = []
     lines = content.splitlines()
 
-    # 1. Python Syntax Validation (via native ast.parse)
+    # 1. Python Syntax & NameError Validation (via native ast.parse and AST symbol resolver)
     if ext in (".py", ".pyw") or lang == "python":
+        parsed_tree = None
         try:
-            ast.parse(content, filename=rel_path)
+            parsed_tree = ast.parse(content, filename=rel_path)
         except SyntaxError as e:
             # Ignore false-positive errors caused by non-printable characters or BOM
             if "U+FEFF" in e.msg or "non-printable character" in e.msg:
@@ -69,6 +70,71 @@ def check_polyglot_syntax(file_info: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "node_id": f"{rel_path}:syntax_error_L{line_no}",
                 "syntax_error": f"Python SyntaxError: {e.msg} at line {line_no}, col {col_no}"
             })
+            return errors
+
+        if parsed_tree:
+            # Check for undefined functions and typos of Python built-ins (e.g. priint -> print)
+            COMMON_BUILTINS = {
+                "print", "len", "range", "input", "str", "int", "float", "list", "dict",
+                "set", "tuple", "bool", "open", "type", "sum", "min", "max", "abs",
+                "round", "enumerate", "zip", "map", "filter", "sorted", "any", "all",
+                "isinstance", "issubclass", "id", "dir", "help", "super", "vars",
+                "hasattr", "getattr", "setattr", "delattr", "format", "eval", "exec",
+                "repr", "iter", "next", "pow", "divmod", "bin", "oct", "hex", "ord", "chr"
+            }
+            defined = set()
+            for node in ast.walk(parsed_tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    defined.add(node.name)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        defined.add(alias.asname or alias.name)
+                elif isinstance(node, ast.ImportFrom):
+                    for alias in node.names:
+                        defined.add(alias.asname or alias.name)
+                elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Param)):
+                    defined.add(node.id)
+
+            import difflib
+            for node in ast.walk(parsed_tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                    name = node.func.id
+                    if name not in COMMON_BUILTINS and name not in defined and not name.startswith("_"):
+                        matches = difflib.get_close_matches(name, COMMON_BUILTINS, n=1, cutoff=0.6)
+                        if matches:
+                            suggestion = matches[0]
+                            line_no = node.lineno
+                            col_no = getattr(node, "col_offset", 0) + 1
+                            err_code = lines[line_no - 1].strip() if line_no <= len(lines) else content[:100]
+                            errors.append({
+                                "file_path": rel_path,
+                                "function_name": f"<name_error_L{line_no}>",
+                                "line_start": line_no,
+                                "line_end": line_no,
+                                "code": err_code,
+                                "language": "python",
+                                "complexity": 1,
+                                "docstring": "",
+                                "node_id": f"{rel_path}:name_error_L{line_no}",
+                                "syntax_error": f"Python NameError: name '{name}' is not defined (Did you mean: '{suggestion}'?) at line {line_no}, col {col_no}"
+                            })
+                        elif len(lines) <= 5 and not defined and not name.isupper():
+                            # Standalone raw snippet calling an unknown function
+                            line_no = node.lineno
+                            col_no = getattr(node, "col_offset", 0) + 1
+                            err_code = lines[line_no - 1].strip() if line_no <= len(lines) else content[:100]
+                            errors.append({
+                                "file_path": rel_path,
+                                "function_name": f"<name_error_L{line_no}>",
+                                "line_start": line_no,
+                                "line_end": line_no,
+                                "code": err_code,
+                                "language": "python",
+                                "complexity": 1,
+                                "docstring": "",
+                                "node_id": f"{rel_path}:name_error_L{line_no}",
+                                "syntax_error": f"Python NameError: name '{name}' is not defined at line {line_no}, col {col_no}"
+                            })
         return errors
 
     # 2. JavaScript / TypeScript Validation (via Node.js vm.Script)
@@ -215,6 +281,9 @@ def check_polyglot_syntax(file_info: Dict[str, Any]) -> List[Dict[str, Any]]:
 def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
     """Slices source files into discrete function chunks and extracts import/call links."""
     raw_files = state.get("raw_files", [])
+    repo_name = state.get("repo_name", "")
+    is_raw = bool(state.get("is_raw_code")) or repo_name in ("Raw Code Snippet", "raw-snippet") or repo_name.startswith("audit_raw_")
+    
     # Strip any UTF-8 BOM from all raw files
     for f in raw_files:
         if "content" in f and isinstance(f["content"], str):
@@ -227,13 +296,21 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
     # Priority 1: Use modular parser_engine (ASTSlicer & NetworkX GraphBuilder)
     if HAS_PARSER_ENGINE and raw_files:
         try:
-            builder = GraphBuilder(include_file_nodes=True)
-            builder.build_from_raw_files(raw_files)
-            pydantic_graph = builder.to_pydantic()
-            graph_nodes = pydantic_graph.nodes
-            graph_edges = pydantic_graph.edges
+            if not is_raw:
+                builder = GraphBuilder(include_file_nodes=True)
+                builder.build_from_raw_files(raw_files)
+                pydantic_graph = builder.to_pydantic()
+                graph_nodes = pydantic_graph.nodes
+                graph_edges = pydantic_graph.edges
+                file_functions = builder.file_functions
+            else:
+                # Slices without building whole-repo network graph for raw code
+                slicer = ASTSlicer()
+                file_functions = {}
+                for f in raw_files:
+                    file_functions[f["rel_path"]] = slicer.slice_code(f["content"], f["rel_path"])
 
-            for rel_path, slices in builder.file_functions.items():
+            for rel_path, slices in file_functions.items():
                 for s in slices:
                     lang = "python" if rel_path.endswith((".py", ".pyw")) else "javascript" if rel_path.endswith((".js", ".jsx", ".ts", ".tsx")) else "c"
                     function_chunks.append({
@@ -252,7 +329,7 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
             for file_info in raw_files:
                 rel_path = file_info["rel_path"]
                 content = file_info.get("content", "")
-                slices = builder.file_functions.get(rel_path, [])
+                slices = file_functions.get(rel_path, [])
                 func_lines = set()
                 for s in slices:
                     func_lines.update(range(s.line_start, s.line_end + 1))
@@ -281,8 +358,8 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
             if function_chunks:
                 return {
                     "function_chunks": function_chunks,
-                    "dependency_graph": DependencyGraph(nodes=graph_nodes, edges=graph_edges),
-                    "current_stage": "Parsed AST and generated Call-Graph via parser_engine"
+                    "dependency_graph": DependencyGraph(nodes=[] if is_raw else graph_nodes, edges=[] if is_raw else graph_edges),
+                    "current_stage": "Parsed AST chunks" if is_raw else "Parsed AST and generated Call-Graph via parser_engine"
                 }
         except Exception as e:
             # Fall back to inline parsing if unexpected error occurs
@@ -408,8 +485,8 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
 
     return {
         "function_chunks": function_chunks,
-        "dependency_graph": DependencyGraph(nodes=graph_nodes, edges=graph_edges),
-        "current_stage": "Parsed AST and generated Call-Graph"
+        "dependency_graph": DependencyGraph(nodes=[] if is_raw else graph_nodes, edges=[] if is_raw else graph_edges),
+        "current_stage": "Parsed AST chunks" if is_raw else "Parsed AST and generated Call-Graph"
     }
 
 
@@ -918,6 +995,15 @@ def _generate_contextual_fix(
         if stripped.startswith(("#", "//", "/*", "*", '"""', "'''")):
             return f"// Non-executable comment or documentation line\n" + code
 
+        # NameError / typo fix (e.g. priint -> print)
+        search_scope = str(fix_suggestion) + " " + str(cwe.get("description", ""))
+        name_error_match = re.search(r"name\s+'([a-zA-Z0-9_]+)'\s+is\s+not\s+defined\s+\(Did you mean:\s+'([a-zA-Z0-9_]+)'\?\)", search_scope)
+        if name_error_match:
+            wrong_name = name_error_match.group(1)
+            correct_name = name_error_match.group(2)
+            fixed_code = re.sub(r'\b' + re.escape(wrong_name) + r'\b', correct_name, code)
+            return f"# Grounded Fix ({cwe_id}): Corrected undefined symbol typo ('{wrong_name}' -> '{correct_name}')\n" + fixed_code
+
         if "missing semicolon" in str(fix_suggestion).lower() or ("semicolon" in str(cwe.get("description", "")).lower()):
             if not code.rstrip().endswith(";"):
                 return f"// Grounded Fix ({cwe_id}): Added missing semicolon\n" + code.rstrip() + ";"
@@ -1045,6 +1131,10 @@ def compile_report_node(state: AuditAgentState) -> Dict[str, Any]:
     chunks = state.get("function_chunks", [])
     graph = state.get("dependency_graph", DependencyGraph())
     repo_name = state.get("repo_name", "audited-repo")
+    is_raw = bool(state.get("is_raw_code")) or repo_name in ("Raw Code Snippet", "raw-snippet") or repo_name.startswith("audit_raw_")
+
+    if is_raw:
+        graph = DependencyGraph(nodes=[], edges=[])
 
     # Calculate severity breakdown
     crit = sum(1 for f in findings if f.severity == SeverityLevel.CRITICAL)

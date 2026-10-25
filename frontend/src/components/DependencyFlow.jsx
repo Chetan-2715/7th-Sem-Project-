@@ -47,6 +47,11 @@ function extractFileName(filePath) {
 }
 
 export default function DependencyFlow({ graph, findings = [] }) {
+  // If graph is empty or only has <= 1 node (e.g. raw code snippet), do not render the map
+  if (!graph || !graph.nodes || graph.nodes.length <= 1) {
+    return null;
+  }
+
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [folderSearch, setFolderSearch] = useState('');

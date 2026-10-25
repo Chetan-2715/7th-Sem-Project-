@@ -42,6 +42,17 @@
 
 ## Detailed Progress Log
 
+### [2026-10-25] — Python Symbol / NameError Verifier & Map Suppression for Raw Code
+- **Python Symbol & NameError Validation in `agent/nodes.py`**:
+  - Previously, `priint("hello")` was syntactically valid in Python grammar (`ast.parse` succeeds) and went uncaught because grammar parsers do not evaluate runtime identifiers.
+  - Implemented an AST symbol resolver and built-in typo detector in `check_polyglot_syntax`.
+  - Discovers function calls to undefined identifiers and matches against Python standard built-ins (`COMMON_BUILTINS`) using `difflib.get_close_matches`.
+  - Accurately catches: `Python NameError: name 'priint' is not defined (Did you mean: 'print'?) at line 1, col 1`.
+  - Built-in grounded replacement synthesizer converts `priint(...)` -> `print(...)` with token-level diff highlighting.
+- **Map Removal for Raw Code Snippets**:
+  - Removed dependency map / React Flow generation for raw code snippets across backend (`parse_ast_node`, `compile_report_node`) and frontend (`App.jsx`, `DependencyFlow.jsx`).
+  - Auditing single raw snippets now renders a clean, focused view with Health Score Gauge, Metric Cards, and Findings Table with Side-by-Side Diff, without empty or useless 1-node graphs.
+
 ### [2026-10-25] — Intelligent Line-by-Line Code Diff & Token Highlight Engine
 - **LCS Line & Token Diff Engine in `frontend/src/components/DiffViewer.jsx`**:
   - Replaced full-block colored `<pre>` containers with an intelligent Longest Common Subsequence (LCS) line diff algorithm.

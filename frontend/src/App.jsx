@@ -9,6 +9,7 @@ import FindingsTable from './components/FindingsTable';
 
 export default function App() {
   const [isAuditing, setIsAuditing] = useState(false);
+  const [auditMode, setAuditMode] = useState('repo'); // 'repo' | 'zip' | 'file' | 'raw'
   const [taskStatus, setTaskStatus] = useState({
     taskId: null,
     stage: 'Initializing...',
@@ -63,6 +64,7 @@ export default function App() {
   // Start GitHub or Raw Code Audit
   const handleStartAudit = async ({ repoUrl, rawCode, filename, enableRag, enableMl }) => {
     const isRaw = Boolean(rawCode);
+    setAuditMode(isRaw ? 'raw' : 'repo');
     setTaskStatus({
       taskId: null,
       stage: isRaw ? 'Parsing raw code snippet...' : 'Cloning repository & initializing pipeline...',
@@ -99,6 +101,7 @@ export default function App() {
     formData.append('enable_ml', enableMl);
 
     const isZip = file.name.toLowerCase().endsWith('.zip');
+    setAuditMode(isZip ? 'zip' : 'file');
     setTaskStatus({
       taskId: null,
       stage: isZip ? 'Uploading & extracting ZIP archive...' : 'Uploading & ingesting source file...',
@@ -170,8 +173,13 @@ export default function App() {
               </div>
             </section>
 
-            {/* Interactive React Flow Dependency Call-Graph */}
-            <DependencyFlow graph={report.dependency_graph} findings={report.findings || []} />
+            {/* Interactive React Flow Dependency Call-Graph (Excluded for Raw Code Snippets) */}
+            {auditMode !== 'raw' &&
+              report.repo_name !== 'Raw Code Snippet' &&
+              report.repo_name !== 'raw-snippet' &&
+              report.dependency_graph?.nodes?.length > 1 && (
+                <DependencyFlow graph={report.dependency_graph} findings={report.findings || []} />
+            )}
 
             {/* Filterable Findings & Diff Reviewer */}
             <FindingsTable findings={report.findings || []} />

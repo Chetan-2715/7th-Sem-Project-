@@ -225,7 +225,7 @@ async def execute_background_audit(
         elif raw_code_data:
             filename, code_text = raw_code_data
             temp_dir = tempfile.mkdtemp(prefix="audit_raw_")
-            repo_name = Path(filename).stem or "raw-snippet"
+            repo_name = "Raw Code Snippet"
             file_dest = Path(temp_dir) / filename
             with open(file_dest, "w", encoding="utf-8") as f:
                 f.write(code_text)
@@ -243,7 +243,8 @@ async def execute_background_audit(
                 raw_files=files,
                 progress_callback=progress_callback,
                 enable_rag=enable_rag,
-                enable_ml=enable_ml
+                enable_ml=enable_ml,
+                is_raw_code=bool(raw_code_data)
             )
         else:
             # Genuine clean report when no supported code files are discovered
