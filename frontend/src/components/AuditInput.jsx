@@ -2,57 +2,18 @@ import React, { useState, useRef } from 'react';
 import {
   Github,
   UploadCloud,
-  Code2,
   Play,
   Loader2,
   FileCode,
-  X,
-  FileCheck,
-  CheckCircle2
+  X
 } from 'lucide-react';
 
 export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
-  const [activeTab, setActiveTab] = useState('github'); // 'github' | 'upload' | 'raw'
+  const [activeTab, setActiveTab] = useState('github'); // 'github' | 'upload'
   const [repoUrl, setRepoUrl] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [rawCode, setRawCode] = useState('');
-  const [filename, setFilename] = useState('snippet.py');
-  const [filenameCustomized, setFilenameCustomized] = useState(false);
-  const [detectedLang, setDetectedLang] = useState('Python');
   const fileInputRef = useRef(null);
-
-  const handleRawCodeChange = (e) => {
-    const code = e.target.value;
-    setRawCode(code);
-
-    if (!filenameCustomized && code.trim().length > 0) {
-      if (
-        /\b(function|const|let|var)\s+[a-zA-Z0-9_]+/.test(code) ||
-        /\b(document\.|window\.|console\.log|\.innerHTML|\.textContent)/.test(code) ||
-        /=>\s*\{?/.test(code)
-      ) {
-        setFilename('snippet.js');
-        setDetectedLang('JavaScript');
-      } else if (
-        /#include\s*[<"]|\bint\s+main\s*\(|\bprintf\s*\(|\bstd::|\bmalloc\s*\(/.test(code)
-      ) {
-        setFilename('snippet.cpp');
-        setDetectedLang('C / C++');
-      } else if (
-        /\bpublic\s+class\s+[a-zA-Z0-9_]+|\bSystem\.out\.print/.test(code)
-      ) {
-        setFilename('snippet.java');
-        setDetectedLang('Java');
-      } else if (
-        /^\s*(def|import|from|class)\s+[a-zA-Z0-9_]+/m.test(code) ||
-        /\belif\b|\bprint\s*\(/.test(code)
-      ) {
-        setFilename('snippet.py');
-        setDetectedLang('Python');
-      }
-    }
-  };
 
   // Tab 1: Submit GitHub Link
   const handleGithubSubmit = (e) => {
@@ -103,20 +64,6 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
     onUploadFile(selectedFile, { enableRag: true, enableMl: true });
   };
 
-  // Tab 3: Submit Raw Code
-  const handleRawCodeSubmit = () => {
-    if (!rawCode.trim()) {
-      alert('Please paste code into the box to audit!');
-      return;
-    }
-    onStartAudit({
-      rawCode: rawCode,
-      filename: filename.trim() || 'snippet.py',
-      enableRag: true,
-      enableMl: true
-    });
-  };
-
   const formatFileSize = (bytes) => {
     if (!bytes) return '0 B';
     const k = 1024;
@@ -127,48 +74,34 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
 
   return (
     <section className="bg-[#161B22] border border-[#30363D] rounded-xl p-6 shadow-sm no-print">
-      {/* Top Full-Width Segmented Tab Bar: Git | ZIP | Code */}
-      <div className="grid grid-cols-3 p-1.5 bg-[#090D13] border border-gray-800 rounded-xl mb-6 shadow-inner">
+      {/* Top Full-Width Segmented Tab Bar: Git | ZIP */}
+      <div className="grid grid-cols-2 p-1.5 bg-[#090D13] border border-gray-800 rounded-xl mb-6 shadow-inner">
         {/* Tab 1: Git */}
         <button
           type="button"
           onClick={() => setActiveTab('github')}
-          className={`relative flex items-center justify-center gap-2.5 py-2.5 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 ease-out select-none ${
+          className={`relative flex items-center justify-center gap-2.5 py-3 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 ease-out select-none ${
             activeTab === 'github'
               ? 'bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400/40 scale-[1.01]'
               : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]/70 border border-transparent'
           }`}
         >
           <Github className={`w-4 h-4 transition-transform duration-300 ${activeTab === 'github' ? 'scale-110 text-white' : 'text-gray-400'}`} />
-          <span>Git</span>
+          <span>Git Repository</span>
         </button>
 
         {/* Tab 2: ZIP */}
         <button
           type="button"
           onClick={() => setActiveTab('upload')}
-          className={`relative flex items-center justify-center gap-2.5 py-2.5 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 ease-out select-none ${
+          className={`relative flex items-center justify-center gap-2.5 py-3 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 ease-out select-none ${
             activeTab === 'upload'
               ? 'bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400/40 scale-[1.01]'
               : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]/70 border border-transparent'
           }`}
         >
           <UploadCloud className={`w-4 h-4 transition-transform duration-300 ${activeTab === 'upload' ? 'scale-110 text-white' : 'text-gray-400'}`} />
-          <span>ZIP</span>
-        </button>
-
-        {/* Tab 3: Code */}
-        <button
-          type="button"
-          onClick={() => setActiveTab('raw')}
-          className={`relative flex items-center justify-center gap-2.5 py-2.5 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 ease-out select-none ${
-            activeTab === 'raw'
-              ? 'bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400/40 scale-[1.01]'
-              : 'text-gray-400 hover:text-gray-200 hover:bg-[#161B22]/70 border border-transparent'
-          }`}
-        >
-          <Code2 className={`w-4 h-4 transition-transform duration-300 ${activeTab === 'raw' ? 'scale-110 text-white' : 'text-gray-400'}`} />
-          <span>Code</span>
+          <span>ZIP / Code Archive</span>
         </button>
       </div>
 
@@ -217,7 +150,7 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
         </form>
       )}
 
-      {/* Tab 2: Drag and Drop Box for ZIP or Single Code File */}
+      {/* Tab 2: Drag and Drop Box for ZIP or Code Archive */}
       {activeTab === 'upload' && (
         <div className="space-y-4 animate-fade-in">
           <div
@@ -234,7 +167,7 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".zip,.py,.js,.jsx,.ts,.tsx,.c,.cpp,.h,.hpp,.java,.go,.rs,.php,.sql,.sh,.html,.json,.yaml,.yml,.txt"
+              accept=".zip,.tar,.gz,.tgz,.py,.js,.jsx,.ts,.tsx,.c,.cpp,.h,.hpp,.java,.go,.rs,.php,.sql,.sh,.html,.json,.yaml,.yml,.txt"
               onChange={handleFileInputChange}
               className="hidden"
             />
@@ -244,13 +177,13 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
                 <UploadCloud className="w-6 h-6 animate-pulse" />
               </div>
               <p className="text-sm font-semibold text-gray-200">
-                Drag and drop your ZIP archive or code file here
+                Drag and drop your ZIP project archive or source file here
               </p>
               <p className="text-xs text-gray-400 mt-1">
                 or <span className="text-blue-400 underline font-medium">browse from your computer</span>
               </p>
               <p className="text-[11px] text-gray-500 mt-3 font-mono">
-                Supports .zip archives or individual source files (.py, .js, .ts, .c, .cpp, .java, .go, .rs, .php, etc.)
+                Supports .zip project archives or source code files (.py, .js, .ts, .c, .cpp, .java, .go, .rs, .php, etc.)
               </p>
             </div>
           </div>
@@ -297,81 +230,13 @@ export default function AuditInput({ onStartAudit, onUploadFile, isAuditing }) {
                   ) : (
                     <>
                       <Play className="w-3.5 h-3.5 fill-white" />
-                      Audit Uploaded File
+                      Audit Codebase
                     </>
                   )}
                 </button>
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Tab 3: Raw Code Paste Box */}
-      {activeTab === 'raw' && (
-        <div className="space-y-3 animate-fade-in">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-            <label className="text-xs font-medium text-gray-400">
-              Paste Raw Code Snippet (Formatting &amp; indentation preserved)
-            </label>
-            <div className="flex items-center gap-2 text-xs">
-              {rawCode.trim().length > 0 && (
-                <span className="text-[10px] px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-700/50 font-mono">
-                  {detectedLang}
-                </span>
-              )}
-              <span className="text-gray-500 font-mono">Filename:</span>
-              <input
-                type="text"
-                value={filename}
-                onChange={(e) => {
-                  setFilename(e.target.value);
-                  setFilenameCustomized(true);
-                }}
-                placeholder="snippet.py"
-                className="bg-[#090D13] border border-gray-700 rounded px-2.5 py-1 text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500 w-32"
-              />
-            </div>
-          </div>
-
-          <div className="relative border border-gray-700 rounded-md bg-[#090D13] focus-within:border-blue-500 transition">
-            <textarea
-              value={rawCode}
-              onChange={handleRawCodeChange}
-              placeholder={`# Paste your source code here directly\n# Indentation, whitespace, and tabs are preserved\n\ndef user_login(username, password):\n    query = f"SELECT * FROM users WHERE user = '{username}' AND pass = '{password}'"\n    cursor.execute(query)\n    return cursor.fetchone()`}
-              rows={9}
-              spellCheck="false"
-              autoCapitalize="off"
-              autoCorrect="off"
-              className="w-full bg-transparent p-4 text-xs text-gray-100 font-mono leading-relaxed focus:outline-none resize-y whitespace-pre"
-              style={{ tabSize: 4 }}
-            />
-          </div>
-
-          <div className="flex justify-between items-center pt-1">
-            <span className="text-[11px] text-gray-500 font-mono">
-              {rawCode ? `${rawCode.split('\n').length} lines • ${rawCode.length} characters` : '0 lines'}
-            </span>
-
-            <button
-              type="button"
-              onClick={handleRawCodeSubmit}
-              disabled={isAuditing}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-70 text-white font-semibold py-2 px-5 rounded-md text-xs transition flex items-center gap-2 shadow-md shadow-blue-600/20 active:scale-95"
-            >
-              {isAuditing ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Auditing Code...
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5 fill-white" />
-                  Audit Raw Code
-                </>
-              )}
-            </button>
-          </div>
         </div>
       )}
     </section>

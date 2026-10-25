@@ -32,10 +32,8 @@ except ImportError:
 
 
 def check_polyglot_syntax(file_info: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Validates source code syntax across Python, JavaScript, Java, and C/C++.
-    Returns discrete syntax error chunks for the audit pipeline.
-    """
+    """Syntax checking removed; pipeline focuses purely on security vulnerabilities."""
+    return []
     rel_path = file_info["rel_path"]
     content = file_info.get("content", "").lstrip("\ufeff")
     lang = (file_info.get("language") or "").lower()
@@ -365,11 +363,6 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
                         "node_id": f"{rel_path}:<module_scope>"
                     })
 
-            # Check for polyglot syntax errors across all source files (Python, Java, JS, C/C++)
-            for file_info in raw_files:
-                syntax_errs = check_polyglot_syntax(file_info)
-                function_chunks.extend(syntax_errs)
-
             if function_chunks:
                 return {
                     "function_chunks": function_chunks,
@@ -494,10 +487,6 @@ def parse_ast_node(state: AuditAgentState) -> Dict[str, Any]:
                 })
 
     # Validate polyglot syntax across all raw files in Priority 2
-    for file_info in raw_files:
-        syntax_errs = check_polyglot_syntax(file_info)
-        function_chunks.extend(syntax_errs)
-
     return {
         "function_chunks": function_chunks,
         "dependency_graph": DependencyGraph(nodes=[] if is_raw else graph_nodes, edges=[] if is_raw else graph_edges),
@@ -634,18 +623,6 @@ def scan_vulnerabilities_node(state: AuditAgentState) -> Dict[str, Any]:
     ]
 
     for chunk in chunks:
-        if "syntax_error" in chunk:
-            scanned_vulns.append({
-                "chunk": chunk,
-                "category": "Syntax Error",
-                "severity": SeverityLevel.HIGH,
-                "confidence": 1.0,
-                "match_text": chunk["code"],
-                "matched_var": None,
-                "error_details": chunk.get("syntax_error")
-            })
-            continue
-
         code = chunk["code"]
         for rule in rules:
             match = re.search(rule["regex"], code, re.IGNORECASE)
@@ -717,14 +694,6 @@ FALLBACK_CWE_MAP = {
         "mitigation": "Validate path input against an allowlist, use safe path resolution methods, and prevent path separators or relative directory navigation.",
         "example_fix": "safe_path = os.path.join(base_dir, os.path.basename(user_path))"
     },
-    "Syntax Error": {
-        "cwe_id": "CWE-754",
-        "cwe_title": "Improper Check for Unusual or Exceptional Conditions (Syntax Error)",
-        "owasp_category": "A08:2021 - Software and Data Integrity Failures",
-        "description": "The file contains a syntax violation preventing compilation or execution.",
-        "mitigation": "Correct the syntax error (check unclosed brackets, missing colons, or improper indentation).",
-        "example_fix": "# Correct syntax error"
-    },
     "Cross-site Scripting (XSS)": {
         "cwe_id": "CWE-79",
         "cwe_title": "Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting - XSS')",
@@ -794,11 +763,7 @@ def rag_grounding_node(state: AuditAgentState) -> Dict[str, Any]:
         chunk = item["chunk"]
         category = item["category"]
 
-        if category == "Syntax Error":
-            matched_cwe = dict(FALLBACK_CWE_MAP["Syntax Error"])
-            if item.get("error_details"):
-                matched_cwe["description"] = item["error_details"]
-        elif enable_rag:
+        if enable_rag:
             # Sub-millisecond vector similarity search in FAISS
             retrieved_docs = rag_engine.retrieve(
                 query=chunk["code"][:300],
@@ -1077,29 +1042,6 @@ def _generate_contextual_fix(
         if "strcpy(" in code:
             fixed = re.sub(r"strcpy\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*([a-zA-Z0-9_]+)\s*\)", r"strncpy(\1, \2, sizeof(\1) - 1);\n    \1[sizeof(\1) - 1] = '\\0'", code)
             return f"// Grounded Fix ({cwe_id}): Use bounded strncpy with null-termination\n" + fixed
-
-    elif category == "Syntax Error":
-        stripped = code.strip()
-        # If line is a comment or blank, leave it as is
-        if stripped.startswith(("#", "//", "/*", "*", '"""', "'''")):
-            return f"// Non-executable comment or documentation line\n" + code
-
-        # NameError / typo fix (e.g. priint -> print)
-        search_scope = str(fix_suggestion) + " " + str(cwe.get("description", ""))
-        name_error_match = re.search(r"name\s+'([a-zA-Z0-9_]+)'\s+is\s+not\s+defined\s+\(Did you mean:\s+'([a-zA-Z0-9_]+)'\?\)", search_scope)
-        if name_error_match:
-            wrong_name = name_error_match.group(1)
-            correct_name = name_error_match.group(2)
-            fixed_code = re.sub(r'\b' + re.escape(wrong_name) + r'\b', correct_name, code)
-            return f"# Grounded Fix ({cwe_id}): Corrected undefined symbol typo ('{wrong_name}' -> '{correct_name}')\n" + fixed_code
-
-        if "missing semicolon" in str(fix_suggestion).lower() or ("semicolon" in str(cwe.get("description", "")).lower()):
-            if not code.rstrip().endswith(";"):
-                return f"// Grounded Fix ({cwe_id}): Added missing semicolon\n" + code.rstrip() + ";"
-        if "(" in code and ")" not in code and ":" in code and not stripped.startswith(("#", "//")):
-            fixed = re.sub(r":\s*$", "):", code)
-            return f"# Grounded Fix ({cwe_id}): Corrected syntax violation (closed missing parenthesis)\n" + fixed
-        return f"{comment_char} Grounded Fix ({cwe_id}): Review and correct syntax\n" + code
 
     return f"{comment_char} Grounded Fix ({cwe_id}):\n" + fix_suggestion
 
