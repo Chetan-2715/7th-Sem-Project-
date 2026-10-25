@@ -63,6 +63,8 @@ export default function App() {
 
   // Start GitHub or Raw Code Audit
   const handleStartAudit = async ({ repoUrl, rawCode, filename, enableRag, enableMl }) => {
+    // Clear old scan results immediately for a fresh screen
+    setReport(null);
     const isRaw = Boolean(rawCode);
     setAuditMode(isRaw ? 'raw' : 'repo');
     setTaskStatus({
@@ -95,6 +97,8 @@ export default function App() {
 
   // Upload ZIP or Single Code File
   const handleUploadFile = async (file, { enableRag, enableMl }) => {
+    // Clear old scan results immediately for a fresh screen
+    setReport(null);
     const formData = new FormData();
     formData.append('file', file);
     formData.append('enable_rag', enableRag);

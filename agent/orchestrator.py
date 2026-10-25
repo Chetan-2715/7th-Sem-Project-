@@ -76,36 +76,52 @@ class AuditAgentOrchestrator:
         }
 
         if self._has_langgraph and self._compiled_graph:
-            # Execute compiled LangGraph
+            # Execute compiled LangGraph with streaming node events for granular progress reporting
+            current_state = dict(initial_state)
             if progress_callback:
-                progress_callback(30, "Parsing AST", "Extracting syntax trees and function boundaries...")
-            final_state = self._compiled_graph.invoke(initial_state)
-            return final_state["audit_result"]
+                progress_callback(30, "Parsing AST", f"Extracting syntax trees across {len(raw_files)} files...")
+
+            stage_updates = {
+                "parse_ast": (50, "Scanning with CodeBERT", "Analyzing code chunks for security vulnerabilities..."),
+                "scan_vulnerabilities": (70, "FAISS RAG Retrieval", "Grounding identified patterns in official CWE/OWASP standards..."),
+                "rag_grounding": (85, "Synthesizing Fixes", "Generating side-by-side replacement code diffs..."),
+                "synthesize_fixes": (95, "Compiling Report", "Calculating Security Health Score and assembling report..."),
+                "compile_report": (100, "Audit Complete", "Report successfully generated.")
+            }
+
+            for event in self._compiled_graph.stream(initial_state):
+                for node_name, node_output in event.items():
+                    current_state.update(node_output)
+                    if progress_callback and node_name in stage_updates:
+                        pct, stage, msg = stage_updates[node_name]
+                        progress_callback(pct, stage, msg)
+
+            return current_state["audit_result"]
         else:
             # Deterministic linear DAG execution
             state = dict(initial_state)
 
             # Step 1: Parse AST
             if progress_callback:
-                progress_callback(35, "Parsing AST", f"Extracting function boundaries across {len(raw_files)} files...")
+                progress_callback(30, "Parsing AST", f"Extracting function boundaries across {len(raw_files)} files...")
             ast_res = parse_ast_node(state)
             state.update(ast_res)
 
             # Step 2: Scan Vulnerabilities
             if progress_callback:
-                progress_callback(60, "Scanning with CodeBERT", f"Analyzing {len(state.get('function_chunks', []))} functions...")
+                progress_callback(50, "Scanning with CodeBERT", f"Analyzing {len(state.get('function_chunks', []))} functions...")
             scan_res = scan_vulnerabilities_node(state)
             state.update(scan_res)
 
             # Step 3: RAG Grounding
             if progress_callback:
-                progress_callback(80, "FAISS RAG Retrieval", "Grounding identified patterns in official CWE/OWASP standards...")
+                progress_callback(70, "FAISS RAG Retrieval", "Grounding identified patterns in official CWE/OWASP standards...")
             rag_res = rag_grounding_node(state)
             state.update(rag_res)
 
             # Step 4: Synthesize Fixes
             if progress_callback:
-                progress_callback(90, "Synthesizing Fixes", "Generating side-by-side replacement code diffs...")
+                progress_callback(85, "Synthesizing Fixes", "Generating side-by-side replacement code diffs...")
             synth_res = synthesize_fixes_node(state)
             state.update(synth_res)
 
@@ -114,6 +130,9 @@ class AuditAgentOrchestrator:
                 progress_callback(95, "Compiling Report", "Calculating Security Health Score and assembling report...")
             report_res = compile_report_node(state)
             state.update(report_res)
+
+            if progress_callback:
+                progress_callback(100, "Audit Complete", "Report successfully generated.")
 
             return state["audit_result"]
 

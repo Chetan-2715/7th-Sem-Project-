@@ -137,102 +137,117 @@ def check_polyglot_syntax(file_info: Dict[str, Any]) -> List[Dict[str, Any]]:
                             })
         return errors
 
-    # 2. JavaScript / TypeScript Validation (via Node.js vm.Script)
-    if ext in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx") or "javascript" in lang:
+    # 2. JavaScript Validation (Node.js syntax check supporting ESM and CommonJS)
+    if ext in (".js", ".mjs", ".cjs") or lang == "javascript":
         try:
             import subprocess
-            node_script = (
-                "const vm = require('vm');\n"
-                "const fs = require('fs');\n"
-                "const code = fs.readFileSync(0, 'utf-8');\n"
-                "try { new vm.Script(code); } catch (e) {\n"
-                "  console.log(JSON.stringify({msg: e.message, line: e.lineNumber || 1, col: e.columnNumber || 1}));\n"
-                "}\n"
-            )
-            res = subprocess.run(
-                ["node", "-e", node_script],
+            # First attempt ESM module syntax check via node --input-type=module --check
+            res_esm = subprocess.run(
+                ["node", "--input-type=module", "--check"],
                 input=content,
                 text=True,
                 capture_output=True,
-                timeout=2
+                timeout=3
             )
-            if res.stdout.strip():
-                try:
-                    data = json.loads(res.stdout.strip())
-                    l_no = data.get("line", 1)
-                    errors.append({
-                        "file_path": rel_path,
-                        "function_name": f"<syntax_error_L{l_no}>",
-                        "line_start": l_no,
-                        "line_end": l_no,
-                        "code": lines[l_no - 1] if l_no <= len(lines) else content[:100],
-                        "language": "javascript",
-                        "complexity": 1,
-                        "docstring": "",
-                        "node_id": f"{rel_path}:syntax_error_L{l_no}",
-                        "syntax_error": f"JavaScript SyntaxError: {data.get('msg')} at line {l_no}"
-                    })
-                except Exception:
-                    pass
+            if res_esm.returncode == 0:
+                return errors
+
+            # If ESM check failed, test CommonJS via node --check (for top-level returns/arguments)
+            res_cjs = subprocess.run(
+                ["node", "--check"],
+                input=content,
+                text=True,
+                capture_output=True,
+                timeout=3
+            )
+            if res_cjs.returncode == 0:
+                return errors
+
+            # Both failed -> Genuine syntax error!
+            err_text = res_esm.stderr if ("import " in content or "export " in content) else (res_cjs.stderr or res_esm.stderr)
+            line_match = re.search(r'\[stdin\]:(\d+)', err_text)
+            line_no = int(line_match.group(1)) if line_match else 1
+            msg_match = re.search(r'(SyntaxError:[^\n\r]+)', err_text)
+            msg = msg_match.group(1) if msg_match else "JavaScript SyntaxError"
+
+            errors.append({
+                "file_path": rel_path,
+                "function_name": f"<syntax_error_L{line_no}>",
+                "line_start": line_no,
+                "line_end": line_no,
+                "code": lines[line_no - 1] if line_no <= len(lines) else content[:100],
+                "language": "javascript",
+                "complexity": 1,
+                "docstring": "",
+                "node_id": f"{rel_path}:syntax_error_L{line_no}",
+                "syntax_error": f"{msg} at line {line_no}"
+            })
         except Exception:
             pass
-
-    # 3. Structural Bracket & Brace Matching (Skip for HTML/markup templates)
-    if ext in (".html", ".htm") or lang == "html":
         return errors
 
-    stack = []
-    pairs = {')': '(', '}': '{', ']': '['}
-    for idx, line in enumerate(lines, 1):
-        clean_line = re.sub(r'//.*$|/\*.*?\*/', '', line)
-        clean_line = re.sub(r'/[^/\n\r]+/[gimsuy]*', '""', clean_line)
-        clean_line = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', clean_line)
-        for char in clean_line:
-            if char in '({[':
-                stack.append((char, idx))
-            elif char in ')}]':
-                if not stack:
-                    errors.append({
-                        "file_path": rel_path,
-                        "function_name": f"<syntax_error_L{idx}>",
-                        "line_start": idx,
-                        "line_end": idx,
-                        "code": line.strip(),
-                        "language": lang or "generic",
-                        "complexity": 1,
-                        "docstring": "",
-                        "node_id": f"{rel_path}:syntax_error_L{idx}",
-                        "syntax_error": f"SyntaxError: Unmatched closing bracket '{char}' at line {idx}"
-                    })
-                else:
-                    top, start_idx = stack.pop()
-                    if top != pairs[char]:
+    # TypeScript and JSX files (.ts, .tsx, .jsx) rely on modern AST or compiler;
+    # skip heuristic regex bracket counters to prevent false positives on JSX tags & type parameters
+    if ext in (".ts", ".tsx", ".jsx") or "react" in lang or "typescript" in lang or ext in (".html", ".htm") or lang == "html":
+        return errors
+
+    # 3. Structural Bracket & Brace Matching (Only for Java and C/C++)
+    if ext in (".java", ".c", ".cpp", ".cc", ".h", ".hpp") or lang in ("java", "c", "cpp"):
+        # Strip block comments and strings across the file content to prevent false positives
+        clean_content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+        clean_content = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', clean_content)
+        clean_lines = clean_content.splitlines()
+
+        stack = []
+        pairs = {')': '(', '}': '{', ']': '['}
+        for idx, line in enumerate(clean_lines, 1):
+            clean_line = re.sub(r'//.*$', '', line)
+            for char in clean_line:
+                if char in '({[':
+                    stack.append((char, idx))
+                elif char in ')}]':
+                    if not stack:
                         errors.append({
                             "file_path": rel_path,
                             "function_name": f"<syntax_error_L{idx}>",
                             "line_start": idx,
                             "line_end": idx,
-                            "code": line.strip(),
+                            "code": lines[idx - 1].strip() if idx <= len(lines) else line.strip(),
                             "language": lang or "generic",
                             "complexity": 1,
                             "docstring": "",
                             "node_id": f"{rel_path}:syntax_error_L{idx}",
-                            "syntax_error": f"SyntaxError: Mismatched bracket '{char}', expected match for '{top}' from line {start_idx}"
+                            "syntax_error": f"SyntaxError: Unmatched closing bracket '{char}' at line {idx}"
                         })
+                    else:
+                        top, start_idx = stack.pop()
+                        if top != pairs[char]:
+                            errors.append({
+                                "file_path": rel_path,
+                                "function_name": f"<syntax_error_L{idx}>",
+                                "line_start": idx,
+                                "line_end": idx,
+                                "code": lines[idx - 1].strip() if idx <= len(lines) else line.strip(),
+                                "language": lang or "generic",
+                                "complexity": 1,
+                                "docstring": "",
+                                "node_id": f"{rel_path}:syntax_error_L{idx}",
+                                "syntax_error": f"SyntaxError: Mismatched bracket '{char}', expected match for '{top}' from line {start_idx}"
+                            })
 
-    for unclosed, start_idx in stack:
-        errors.append({
-            "file_path": rel_path,
-            "function_name": f"<syntax_error_L{start_idx}>",
-            "line_start": start_idx,
-            "line_end": start_idx,
-            "code": lines[start_idx - 1].strip() if start_idx <= len(lines) else "",
-            "language": lang or "generic",
-            "complexity": 1,
-            "docstring": "",
-            "node_id": f"{rel_path}:syntax_error_L{start_idx}",
-            "syntax_error": f"SyntaxError: Unclosed opening bracket '{unclosed}' at line {start_idx}"
-        })
+        for unclosed, start_idx in stack:
+            errors.append({
+                "file_path": rel_path,
+                "function_name": f"<syntax_error_L{start_idx}>",
+                "line_start": start_idx,
+                "line_end": start_idx,
+                "code": lines[start_idx - 1].strip() if start_idx <= len(lines) else "",
+                "language": lang or "generic",
+                "complexity": 1,
+                "docstring": "",
+                "node_id": f"{rel_path}:syntax_error_L{start_idx}",
+                "syntax_error": f"SyntaxError: Unclosed opening bracket '{unclosed}' at line {start_idx}"
+            })
 
     # 4. Java & C / C++ Statement Semicolon Verification
     if ext in (".java", ".c", ".cpp", ".cc", ".h", ".hpp") or lang in ("java", "c", "cpp"):

@@ -203,19 +203,19 @@ async def execute_background_audit(
     temp_dir = None
     try:
         # Step 1: Ingestion
-        audit_task_manager.update_progress(task_id, 15, "Ingesting source code", "Preparing source files for audit...")
-        await asyncio.sleep(0.5)
-
         repo_name = "analyzed-codebase"
         if repo_url:
-            temp_dir, repo_name = ingestor.clone_github_repo(repo_url)
+            audit_task_manager.update_progress(task_id, 8, "Cloning Repository", f"Connecting to GitHub: {repo_url}...")
+            temp_dir, repo_name = await asyncio.to_thread(ingestor.clone_github_repo, repo_url)
         elif zip_temp_path:
-            temp_dir, repo_name = ingestor.extract_zip(zip_temp_path)
+            audit_task_manager.update_progress(task_id, 10, "Extracting Archive", "Unpacking uploaded ZIP...")
+            temp_dir, repo_name = await asyncio.to_thread(ingestor.extract_zip, zip_temp_path)
             try:
                 os.remove(zip_temp_path)
             except Exception:
                 pass
         elif single_file_data:
+            audit_task_manager.update_progress(task_id, 10, "Ingesting File", "Processing uploaded source file...")
             filename, file_bytes = single_file_data
             temp_dir = tempfile.mkdtemp(prefix="audit_file_")
             repo_name = Path(filename).stem
@@ -223,6 +223,7 @@ async def execute_background_audit(
             with open(file_dest, "wb") as f:
                 f.write(file_bytes)
         elif raw_code_data:
+            audit_task_manager.update_progress(task_id, 10, "Ingesting Snippet", "Preparing raw code for audit...")
             filename, code_text = raw_code_data
             temp_dir = tempfile.mkdtemp(prefix="audit_raw_")
             repo_name = "Raw Code Snippet"
@@ -230,7 +231,8 @@ async def execute_background_audit(
             with open(file_dest, "w", encoding="utf-8") as f:
                 f.write(code_text)
 
-        files = ingestor.walk_codebase(temp_dir) if temp_dir else []
+        audit_task_manager.update_progress(task_id, 20, "Indexing Files", "Scanning file structures and dependencies...")
+        files = await asyncio.to_thread(ingestor.walk_codebase, temp_dir) if temp_dir else []
         total_files = len(files)
 
         # Run the full LangGraph Agent Workflow
@@ -238,7 +240,8 @@ async def execute_background_audit(
             audit_task_manager.update_progress(task_id, pct, stage, msg)
 
         if files:
-            result = audit_orchestrator.run(
+            result = await asyncio.to_thread(
+                audit_orchestrator.run,
                 repo_name=repo_name,
                 raw_files=files,
                 progress_callback=progress_callback,
