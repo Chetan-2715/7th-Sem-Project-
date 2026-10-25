@@ -79,10 +79,21 @@ The **Codebase Architecture & Risk Auditor** features an engineer-first, profess
   - Grounded CWE citation badges linking to MITRE advisories.
   - Natural-language reasoning synthesized by the agent.
 
-### 6. Side-by-Side Code Diff Viewer (`DiffViewer.jsx`)
-- Compares the original vulnerable code snippet against the AI-generated replacement fix.
-- Red highlight (`#F8514920`) for vulnerable lines; Green highlight (`#3FB95020`) for secure replacement code.
-- One-click "Copy Replacement Fix" button for seamless developer workflow.
+### 6. Intelligent Code Diff Engine & Token-Level Highlighting (`DiffViewer.jsx`)
+- **Longest Common Subsequence (LCS) Line Diffing**:
+  - Compares original code and replacement patch line-by-line rather than blanket-coloring entire code blocks.
+  - Unchanged lines remain in neutral syntax gray (`text-gray-400`), receding into the background.
+  - Removed/modified lines are highlighted with high-contrast rose banners (`bg-rose-950/40 border-l-4 border-rose-500`).
+  - Added/replacement lines are highlighted with emerald green banners (`bg-emerald-950/40 border-l-4 border-emerald-500`).
+- **Word / Token-Level In-Line Highlight**:
+  - For modified lines, isolates the exact differing identifier (e.g., `innerHTML` vs `textContent`) using prefix/suffix analysis and renders prominent token pills (`bg-rose-900` / `bg-emerald-800`).
+- **Interactive Controls & Productivity Tools**:
+  - **Change Statistics**: Header pills displaying exact line alterations (`-1 line`, `+2 lines`).
+  - **Jump to Change**: One-click target button that smooth-scrolls directly to the first modified line.
+  - **Focus Mode ("Changes Only")**: Collapses unchanged boilerplate code and isolates changed lines within a configurable context window (`@@ N unchanged lines hidden @@`).
+  - **Dual Display Modes**: Toggle between `Split (Side-by-Side)` and `Unified (Git Diff Stream)`.
+  - **True Line Numbering**: Gutter reflects actual file line bounds (e.g., `L109–L142`) matching finding cards.
+  - **Copy Replacement**: Seamless one-click clipboard action.
 
 ### 7. Interactive Dependency Call Graph (`DependencyFlow.jsx`)
 - Built with React Flow (`@xyflow/react`).

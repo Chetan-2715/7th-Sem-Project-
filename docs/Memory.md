@@ -42,6 +42,21 @@
 
 ## Detailed Progress Log
 
+### [2026-10-25] — Intelligent Line-by-Line Code Diff & Token Highlight Engine
+- **LCS Line & Token Diff Engine in `frontend/src/components/DiffViewer.jsx`**:
+  - Replaced full-block colored `<pre>` containers with an intelligent Longest Common Subsequence (LCS) line diff algorithm.
+  - Unchanged lines are kept in clean, neutral syntax gray (`text-gray-400`), preventing visual fatigue on long code functions.
+  - Removed/modified lines feature prominent rose banners (`bg-rose-950/40 border-l-4 border-rose-500`) with `-` gutter indicators.
+  - Added/replacement lines feature prominent emerald banners (`bg-emerald-950/40 border-l-4 border-emerald-500`) with `+` gutter indicators.
+  - Implemented token-level inline diffing (`renderInlineDiff`): for modified lines, prefix/suffix detection isolates the exact changed token (e.g. `innerHTML` vs `textContent`) and renders highlighted badges.
+- **Productivity & Review Features**:
+  - **Change Statistics & Jump**: Displays count badges (`-1 line`, `+2 lines`) and a "Jump to Change" auto-scroll button.
+  - **Focus Mode ("Changes Only")**: Collapses unchanged boilerplate code into expandable fold bars (`@@ N unchanged lines hidden @@`).
+  - **Dual View Modes**: Seamless toggle between `Split (Side-by-Side)` and `Unified (Git Diff)` streams.
+  - **Line Numbering Sync**: Gutter displays true file line numbers (e.g. `L109–L142`) corresponding to AST slicing.
+- **Reusability across UI**:
+  - Integrated into both `frontend/src/components/FindingsTable.jsx` and `frontend/src/components/DependencyFlow.jsx`.
+
 ### [2026-10-25] — Hierarchical Folder Map & Interactive Drilldown Modal
 - **Hierarchical Graph Engine in `frontend/src/components/DependencyFlow.jsx`**:
   - Replaced the unwieldy 800+ raw node graph with an aggregated **Folder Architecture View**.

@@ -27,6 +27,7 @@ import {
   ExternalLink,
   Code
 } from 'lucide-react';
+import DiffViewer from './DiffViewer';
 
 // Helper to determine folder from a file path
 function extractFolderPath(filePath) {
@@ -837,35 +838,12 @@ export default function DependencyFlow({ graph, findings = [] }) {
                                   </p>
 
                                   {/* Code Diffs inside function view */}
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
-                                    {/* Vulnerable Code */}
-                                    <div className="bg-[#090D13] p-2.5 rounded border border-rose-950 overflow-x-auto">
-                                      <div className="text-[10px] text-rose-400 font-bold mb-1">Original Vulnerable Snippet:</div>
-                                      <pre className="text-rose-200/90 whitespace-pre-wrap">{finding.vulnerable_code}</pre>
-                                    </div>
-
-                                    {/* Recommended Fix */}
-                                    <div className="bg-[#090D13] p-2.5 rounded border border-emerald-950 overflow-x-auto relative group">
-                                      <div className="flex justify-between items-center mb-1">
-                                        <div className="text-[10px] text-emerald-400 font-bold">Recommended Secure Patch:</div>
-                                        <button
-                                          onClick={() => handleCopyCode(finding.id, finding.fix_code)}
-                                          className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1 bg-[#21262D] px-1.5 py-0.5 rounded"
-                                        >
-                                          {copiedId === finding.id ? (
-                                            <>
-                                              <Check className="w-3 h-3 text-emerald-400" /> Copied
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Copy className="w-3 h-3" /> Copy
-                                            </>
-                                          )}
-                                        </button>
-                                      </div>
-                                      <pre className="text-emerald-200/90 whitespace-pre-wrap">{finding.fix_code}</pre>
-                                    </div>
-                                  </div>
+                                  <DiffViewer
+                                    vulnerableCode={finding.vulnerable_code}
+                                    fixCode={finding.fix_code}
+                                    id={finding.id}
+                                    lineStart={finding.line_start}
+                                  />
                                 </div>
                               ))}
                             </div>

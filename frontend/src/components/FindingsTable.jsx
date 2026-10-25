@@ -183,6 +183,7 @@ export default function FindingsTable({ findings = [] }) {
                 vulnerableCode={finding.vulnerable_code}
                 fixCode={finding.fix_code}
                 id={finding.id || idx}
+                lineStart={finding.line_start}
               />
 
               {/* RAG Grounding Citation */}
