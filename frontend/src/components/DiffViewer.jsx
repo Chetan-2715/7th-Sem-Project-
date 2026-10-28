@@ -97,20 +97,24 @@ function computeDiff(oldCode = '', newCode = '', baseLine = 1) {
         k++;
       }
 
-      // Isolate top-level added comments from actual replacement code to avoid misaligned token diffs
+      // Isolate only leading comments (e.g. top-level "// Grounded Fix..." header) from replacement code
       const isComment = (str) => /^\s*(?:#|\/\/|\/\*|\*)/.test(str || '');
-      const cleanAdds = [];
-      for (const a of addGroup) {
-        if (isComment(a.newLine) && !delGroup.some((d) => isComment(d.oldLine))) {
-          rows.push({
-            type: 'added',
-            left: null,
-            right: { text: a.newLine, lineNum: 1 + a.newIndex, type: 'added' },
-          });
-        } else {
-          cleanAdds.push(a);
-        }
+      let leadingCommentsEnd = 0;
+      while (
+        leadingCommentsEnd < addGroup.length &&
+        isComment(addGroup[leadingCommentsEnd].newLine) &&
+        !delGroup.some((d) => isComment(d.oldLine))
+      ) {
+        const a = addGroup[leadingCommentsEnd];
+        rows.push({
+          type: 'added',
+          left: null,
+          right: { text: a.newLine, lineNum: 1 + a.newIndex, type: 'added' },
+        });
+        leadingCommentsEnd++;
       }
+
+      const cleanAdds = addGroup.slice(leadingCommentsEnd);
 
       const maxLen = Math.max(delGroup.length, cleanAdds.length);
       for (let idx = 0; idx < maxLen; idx++) {

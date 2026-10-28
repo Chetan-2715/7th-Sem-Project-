@@ -269,6 +269,8 @@ class CodebaseIngestor:
                         # Skip unreadable or corrupted files cleanly
                         continue
 
+        # Sort deterministically by rel_path to guarantee identical scan ordering every run
+        collected_files.sort(key=lambda x: x["rel_path"].lower())
         return collected_files
 
     def cleanup(self, directory_path: str):

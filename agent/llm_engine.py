@@ -67,10 +67,10 @@ def generate_ai_remediation(
 
     comment_char = "//" if target_lang in ("javascript", "typescript", "java", "c", "cpp") else "#"
 
-    # 2. Build prompt
+    # 2. Build prompt with strict completeness instructions
     prompt = (
         f"You are a principal security engineer and senior software architect.\n"
-        f"A vulnerability has been detected in the following {target_lang.capitalize()} code:\n"
+        f"A vulnerability has been detected in the following {target_lang.capitalize()} code snippet:\n"
         f"- File: {file_path}\n"
         f"- Vulnerability Category: {category} ({cwe_id})\n"
     )
@@ -81,8 +81,12 @@ def generate_ai_remediation(
         f"\nVulnerable Code:\n"
         f"{vulnerable_code}\n\n"
         f"Task:\n"
-        f"Write a secure, production-grade drop-in replacement that eliminates this vulnerability while preserving functionality.\n"
-        f"Output ONLY the replacement {target_lang.capitalize()} code. Do not wrap in markdown quotes. No conversational text."
+        f"Write the EXACT drop-in replacement for the code above that remediates the {category} vulnerability.\n"
+        f"CRITICAL RULES:\n"
+        f"1. You MUST reproduce the COMPLETE code block from start to finish. Do NOT truncate, do NOT omit lines, and do NOT use placeholders like '// ... remaining code'.\n"
+        f"2. Do NOT invent or declare new helper functions above or below the code block (assume standard libraries or sanitizers are available).\n"
+        f"3. Preserve all original variable names, control flow, and functionality while applying the secure pattern.\n"
+        f"4. Output ONLY raw executable code. No markdown code blocks (no ```). No conversational explanations."
     )
 
     # 2. Try Google Gemini API

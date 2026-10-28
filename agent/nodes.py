@@ -943,64 +943,64 @@ def _generate_contextual_fix(
         if "DOMPurify.sanitize" in code:
             return code
 
-        lines = code.splitlines()
-        fixed_lines = []
-        i = 0
-        changed_any = False
+        # Bracket, quote, and block-aware parser for .innerHTML assignments
+        pattern = re.compile(r'(\b[a-zA-Z0-9_\$\[\]\.\(\)\'\"]+\.innerHTML\s*=\s*)')
+        matches = list(pattern.finditer(code))
+        if matches:
+            result = []
+            last_idx = 0
+            changed = False
+            for m in matches:
+                end_assign = m.end()
+                result.append(code[last_idx:end_assign])
+                expr_start = end_assign
+                k = expr_start
+                in_s = in_d = in_b = False
+                p_depth = b_depth = br_depth = 0
+                expr_end = len(code)
 
-        while i < len(lines):
-            line = lines[i]
-
-            # Case A: Single line innerHTML assignment
-            def replace_innerhtml_expr(m):
-                nonlocal changed_any
-                target = m.group(1)
-                expr = m.group(2).strip()
-                if expr.startswith("DOMPurify.sanitize"):
-                    return m.group(0)
-                changed_any = True
-                return f"{target}.innerHTML = DOMPurify.sanitize({expr})"
-
-            new_line = re.sub(
-                r'([a-zA-Z0-9_\$\[\]\.\(\)\'\"]+)\.innerHTML\s*=\s*([^;]+?)(?=\s*;|\s*return|\s*\})',
-                replace_innerhtml_expr,
-                line
-            )
-
-            # Case B: Multi-line innerHTML assignment opening: target.innerHTML = positions.map(p => {
-            if not changed_any or new_line == line:
-                multi_open = re.search(r'^\s*([a-zA-Z0-9_\$\[\]\.\(\)\'\"]+)\.innerHTML\s*=\s*(.+)$', line)
-                if multi_open and not line.strip().endswith(";"):
-                    target = multi_open.group(1)
-                    rhs_start = multi_open.group(2).strip()
-                    j = i + 1
-                    closed = False
-                    while j < len(lines):
-                        if ".join(" in lines[j] or lines[j].strip().endswith(";"):
-                            closed = True
-                            break
-                        j += 1
-
-                    if closed:
-                        changed_any = True
-                        lines[i] = re.sub(
-                            r'([a-zA-Z0-9_\$\[\]\.\(\)\'\"]+)\.innerHTML\s*=\s*(.+)$',
-                            r'\1.innerHTML = DOMPurify.sanitize(\2',
-                            lines[i]
-                        )
-                        if lines[j].rstrip().endswith(";"):
-                            lines[j] = re.sub(r';\s*$', ');', lines[j])
-                        else:
-                            lines[j] = lines[j] + ')'
-                        fixed_lines.append(lines[i])
-                        i += 1
+                while k < len(code):
+                    ch = code[k]
+                    if ch == '\\' and (in_s or in_d or in_b):
+                        k += 2
                         continue
+                    if not (in_s or in_d or in_b):
+                        if ch == "'": in_s = True
+                        elif ch == '"': in_d = True
+                        elif ch == '`': in_b = True
+                        elif ch == '(': p_depth += 1
+                        elif ch == ')':
+                            if p_depth > 0: p_depth -= 1
+                        elif ch == '{': b_depth += 1
+                        elif ch == '}':
+                            if b_depth > 0: b_depth -= 1
+                            elif p_depth == 0 and b_depth == 0:
+                                expr_end = k
+                                break
+                        elif ch == '[': br_depth += 1
+                        elif ch == ']':
+                            if br_depth > 0: br_depth -= 1
+                        elif ch == ';':
+                            if p_depth == 0 and b_depth == 0 and br_depth == 0:
+                                expr_end = k
+                                break
+                    else:
+                        if in_s and ch == "'": in_s = False
+                        elif in_d and ch == '"': in_d = False
+                        elif in_b and ch == '`': in_b = False
+                    k += 1
 
-            fixed_lines.append(new_line)
-            i += 1
+                expr = code[expr_start:expr_end].strip()
+                if expr and not expr.startswith("DOMPurify.sanitize"):
+                    result.append(f"DOMPurify.sanitize({expr})")
+                    changed = True
+                else:
+                    result.append(expr)
+                last_idx = expr_end
 
-        if changed_any:
-            return f"// Grounded Fix ({cwe_id}): Sanitize HTML markup with DOMPurify.sanitize() to prevent XSS\n" + "\n".join(fixed_lines)
+            result.append(code[last_idx:])
+            if changed:
+                return f"// Grounded Fix ({cwe_id}): Sanitize HTML markup with DOMPurify.sanitize() to prevent XSS\n" + "".join(result)
 
         if ".innerHTML" in code:
             fixed = code.replace(".innerHTML", ".textContent")
@@ -1087,13 +1087,22 @@ def synthesize_fixes_node(state: AuditAgentState) -> Dict[str, Any]:
             except Exception:
                 pass
 
-        # Verify AI fix actually modified the vulnerable code; if not, use deterministic patch generator
+        # Verify AI fix actually modified the vulnerable code and is complete (not truncated or fragmented)
         is_effective = False
         if fix_code:
             clean_fix = re.sub(r'^\s*(//|#|/\*).*$', '', fix_code, flags=re.MULTILINE).strip()
             clean_orig = re.sub(r'^\s*(//|#|/\*).*$', '', original_code, flags=re.MULTILINE).strip()
             if clean_fix and clean_fix != clean_orig:
-                is_effective = True
+                orig_lines = [l for l in original_code.splitlines() if l.strip()]
+                fix_lines = [l for l in clean_fix.splitlines() if l.strip()]
+                # Reject if the AI response truncated more than 35% of the original code
+                if len(orig_lines) > 4 and len(fix_lines) < max(3, int(len(orig_lines) * 0.65)):
+                    is_effective = False
+                # Reject if AI left truncated placeholder sentences or incomplete trailing comments
+                elif re.search(r'(?i)(?://|#)\s*(?:remaining|todo|this function ensures\s*$|\.\.\.)', fix_code):
+                    is_effective = False
+                else:
+                    is_effective = True
 
         if not is_effective:
             fix_code = _generate_contextual_fix(
