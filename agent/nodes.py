@@ -1192,6 +1192,12 @@ def compile_report_node(state: AuditAgentState) -> Dict[str, Any]:
         total_findings=len(findings)
     )
 
+    # Order findings deterministically by file_path and line_start
+    sorted_findings = sorted(
+        findings,
+        key=lambda f: (str(getattr(f, "file_path", "") or ""), int(getattr(f, "line_start", 0) or 0))
+    )
+
     audit_result = AuditResult(
         audit_id=str(uuid.uuid4()),
         repo_name=repo_name,
@@ -1201,7 +1207,7 @@ def compile_report_node(state: AuditAgentState) -> Dict[str, Any]:
         total_functions=len(chunks),
         scanned_at=datetime.utcnow().isoformat() + "Z",
         summary=summary,
-        findings=findings,
+        findings=sorted_findings,
         dependency_graph=graph
     )
 

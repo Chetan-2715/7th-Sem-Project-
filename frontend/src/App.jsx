@@ -129,15 +129,101 @@ export default function App() {
     }
   };
 
-  // Export JSON Report
+  // Helper to extract cleanly ordered vulnerability findings (sorted by file_path, then line_start)
+  // Stripped of heavy AST graphs, replaceable code diffs, and rationale bloat.
+  const getOrderedReportFindings = (findings = []) => {
+    return [...findings]
+      .sort((a, b) => {
+        const fileA = (a.file_path || '').toLowerCase();
+        const fileB = (b.file_path || '').toLowerCase();
+        if (fileA !== fileB) {
+          return fileA.localeCompare(fileB);
+        }
+        return (a.line_start || 0) - (b.line_start || 0);
+      })
+      .map((f) => {
+        const lineStart = f.line_start ?? 1;
+        const lineEnd = f.line_end ?? lineStart;
+        const lineRange = lineStart === lineEnd ? `Line ${lineStart}` : `Lines ${lineStart}-${lineEnd}`;
+        const funcName = f.function_name && f.function_name.trim() ? f.function_name : 'Global / Module Scope';
+        const vulnName = f.cwe_id 
+          ? `${f.category || 'Vulnerability'} (${f.cwe_id})` 
+          : (f.category || 'Vulnerability');
+
+        return {
+          file_path: f.file_path || 'unknown',
+          function: funcName,
+          line_range: lineRange,
+          vulnerability: vulnName,
+          severity: f.severity || 'Medium',
+        };
+      });
+  };
+
+  // Download Clean, Ordered Text Report (.txt)
+  const handleDownloadReport = () => {
+    if (!report) return;
+    const ordered = getOrderedReportFindings(report.findings || []);
+    const repoTitle = report.repo_name || 'Codebase';
+    const timestamp = report.scanned_at
+      ? new Date(report.scanned_at).toLocaleString()
+      : new Date().toLocaleString();
+
+    let content = `================================================================================\n`;
+    content += `CODEBASE VULNERABILITY AUDIT REPORT\n`;
+    content += `================================================================================\n`;
+    content += `Target Project : ${repoTitle}\n`;
+    content += `Scanned At     : ${timestamp}\n`;
+    content += `Total Findings : ${ordered.length}\n`;
+    content += `================================================================================\n\n`;
+    content += `ORDERED VULNERABILITY FINDINGS:\n`;
+    content += `--------------------------------------------------------------------------------\n`;
+
+    if (ordered.length === 0) {
+      content += `No vulnerabilities detected. Codebase is clean.\n`;
+    } else {
+      ordered.forEach((item, idx) => {
+        content += `\n[${idx + 1}] File Path     : ${item.file_path}\n`;
+        content += `    Function      : ${item.function}\n`;
+        content += `    Line Range    : ${item.line_range}\n`;
+        content += `    Vulnerability : ${item.vulnerability}\n`;
+        content += `    Severity      : ${item.severity}\n`;
+      });
+    }
+
+    content += `\n--------------------------------------------------------------------------------\n`;
+    content += `================================================================================\n`;
+    content += `END OF REPORT\n`;
+    content += `================================================================================\n`;
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vulnerability-report-${report.repo_name || 'audit'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Export Clean, Ordered JSON Report (.json)
   const handleExportJson = () => {
     if (!report) return;
-    const jsonStr = JSON.stringify(report, null, 2);
+    const ordered = getOrderedReportFindings(report.findings || []);
+
+    const exportData = {
+      project: report.repo_name || 'Codebase Audit',
+      audit_id: report.audit_id || 'result',
+      scanned_at: report.scanned_at || new Date().toISOString(),
+      total_findings: ordered.length,
+      findings: ordered,
+    };
+
+    const jsonStr = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `audit-report-${report.audit_id || 'result'}.json`;
+    a.download = `vulnerability-report-${report.repo_name || 'audit'}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -173,7 +259,11 @@ export default function App() {
                 <HealthScoreGauge score={report.health_score} />
               </div>
               <div className="md:col-span-8">
-                <MetricCards report={report} onExportJson={handleExportJson} />
+                <MetricCards
+                  report={report}
+                  onExportJson={handleExportJson}
+                  onDownloadReport={handleDownloadReport}
+                />
               </div>
             </section>
 

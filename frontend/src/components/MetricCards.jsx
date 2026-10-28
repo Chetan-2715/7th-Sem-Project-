@@ -1,7 +1,7 @@
 import React from 'react';
-import { Download, Printer, Code, Network, Clock } from 'lucide-react';
+import { Download, Printer, Code, Network, Clock, FileText } from 'lucide-react';
 
-export default function MetricCards({ report, onExportJson }) {
+export default function MetricCards({ report, onExportJson, onDownloadReport }) {
   const summary = report?.summary || {};
   const totalFindings = report?.findings?.length || 0;
   const totalFiles = report?.total_files || 0;
@@ -59,8 +59,17 @@ export default function MetricCards({ report, onExportJson }) {
 
         <div className="flex items-center gap-2 no-print">
           <button
+            onClick={onDownloadReport}
+            className="bg-[#21262D] hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded border border-gray-700 flex items-center gap-1.5 transition active:scale-95"
+            title="Download clean, ordered text report"
+          >
+            <FileText className="w-3.5 h-3.5 text-emerald-400" />
+            Download Report
+          </button>
+          <button
             onClick={onExportJson}
             className="bg-[#21262D] hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded border border-gray-700 flex items-center gap-1.5 transition active:scale-95"
+            title="Export clean, ordered JSON report"
           >
             <Download className="w-3.5 h-3.5 text-blue-400" />
             Export JSON
@@ -70,7 +79,7 @@ export default function MetricCards({ report, onExportJson }) {
             className="bg-[#21262D] hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded border border-gray-700 flex items-center gap-1.5 transition active:scale-95"
           >
             <Printer className="w-3.5 h-3.5 text-gray-400" />
-            Print Report / PDF
+            Print / PDF
           </button>
         </div>
       </div>

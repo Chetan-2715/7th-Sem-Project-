@@ -36,6 +36,39 @@ def test_sample_report():
     assert len(data["dependency_graph"]["nodes"]) > 0
 
 
+def test_ordered_report_summary():
+    """Verify /api/report/{audit_id}/summary returns clean, ordered findings without replaceable code."""
+    # First get or generate a sample report to populate audit_reports_db
+    sample_res = client.get("/api/sample-report")
+    assert sample_res.status_code == 200
+    audit_id = sample_res.json()["audit_id"]
+
+    # Now fetch clean summary
+    summary_res = client.get(f"/api/report/{audit_id}/summary")
+    assert summary_res.status_code == 200
+    summary = summary_res.json()
+
+    assert "findings" in summary
+    assert "total_findings" in summary
+    assert summary["total_findings"] == 4
+
+    findings = summary["findings"]
+    # Check each item structure - must only contain path, function, range, vulnerability, severity
+    for item in findings:
+        assert "file_path" in item
+        assert "function" in item
+        assert "line_range" in item
+        assert "vulnerability" in item
+        assert "severity" in item
+        # Must NOT contain code diffs or graph bloat
+        assert "fix_code" not in item
+        assert "vulnerable_code" not in item
+
+    # Verify findings are strictly ordered by file_path
+    file_paths = [f["file_path"].lower() for f in findings]
+    assert file_paths == sorted(file_paths)
+
+
 def test_zip_extraction():
     """Verify safe zip extraction logic and file discovery."""
     ingestor = CodebaseIngestor()

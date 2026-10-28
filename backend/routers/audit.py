@@ -390,6 +390,49 @@ async def get_audit_report(audit_id: str):
     return audit_reports_db[audit_id]
 
 
+@router.get("/report/{audit_id}/summary")
+async def get_ordered_audit_summary(audit_id: str):
+    """
+    Returns clean, ordered vulnerability findings (sorted by file_path, line_start)
+    strictly containing file path, function, line range, and vulnerability.
+    Excludes replaceable code diffs, raw markdown rationale, and AST graph bloat.
+    """
+    if audit_id not in audit_reports_db:
+        raise HTTPException(status_code=404, detail=f"Audit report with ID '{audit_id}' not found.")
+    
+    report = audit_reports_db[audit_id]
+    sorted_findings = sorted(
+        report.findings,
+        key=lambda f: (str(getattr(f, "file_path", "") or "").lower(), int(getattr(f, "line_start", 0) or 0))
+    )
+    
+    clean_findings = []
+    for f in sorted_findings:
+        start = getattr(f, "line_start", 1) or 1
+        end = getattr(f, "line_end", start) or start
+        line_range = f"Line {start}" if start == end else f"Lines {start}-{end}"
+        func = getattr(f, "function_name", None) or "Global / Module Scope"
+        cwe = getattr(f, "cwe_id", "")
+        cat = getattr(f, "category", "Vulnerability")
+        vuln = f"{cat} ({cwe})" if cwe else cat
+
+        clean_findings.append({
+            "file_path": getattr(f, "file_path", "unknown"),
+            "function": func,
+            "line_range": line_range,
+            "vulnerability": vuln,
+            "severity": getattr(f, "severity", "Medium")
+        })
+
+    return {
+        "project": report.repo_name,
+        "audit_id": report.audit_id,
+        "scanned_at": report.scanned_at,
+        "total_findings": len(clean_findings),
+        "findings": clean_findings
+    }
+
+
 @router.get("/sample-report", response_model=AuditResult)
 async def get_sample_report():
     """Returns a realistic mock audit report to immediately enable Frontend UI development."""
