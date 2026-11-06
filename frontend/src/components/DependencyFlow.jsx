@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ReactFlow,
   MiniMap,
@@ -74,6 +75,17 @@ export default function DependencyFlow({ graph, findings = [] }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedFolder, selectedFile]);
+
+  // Lock body scroll when folder drilldown modal is active
+  useEffect(() => {
+    if (selectedFolder) {
+      const origOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = origOverflow;
+      };
+    }
+  }, [selectedFolder]);
 
   // Copy helper
   const handleCopyCode = (id, code) => {
@@ -554,9 +566,21 @@ export default function DependencyFlow({ graph, findings = [] }) {
       {/* ------------------------------------------------------------- */}
       {/* POPUP MODAL: Interactive Folder & File Drilldown Screen */}
       {/* ------------------------------------------------------------- */}
-      {selectedFolder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#161B22] border border-[#30363D] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      {selectedFolder &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-fade-in"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setSelectedFolder(null);
+                setSelectedFile(null);
+              }
+            }}
+          >
+            <div
+              className="bg-[#161B22] border border-[#30363D] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* Modal Navigation Bar / Breadcrumbs */}
             <div className="px-5 py-4 border-b border-[#30363D] bg-[#0D1117] flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2 text-xs font-mono overflow-x-auto py-1">
@@ -876,7 +900,8 @@ export default function DependencyFlow({ graph, findings = [] }) {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </section>
   );
