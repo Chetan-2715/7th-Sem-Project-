@@ -3,6 +3,9 @@
 *.pptx
 *.xlsx
 *.pdf
+Conversation_History_*.*
+generate_project_report.py
+export_*.py
 diagrams/
 
 # Datasets (Do not push large datasets to Git)
