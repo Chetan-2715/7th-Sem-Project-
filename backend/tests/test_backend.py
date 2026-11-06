@@ -60,8 +60,8 @@ def test_ordered_report_summary():
         assert "line_range" in item
         assert "vulnerability" in item
         assert "severity" in item
+        assert "replacement_code" in item
         # Must NOT contain code diffs or graph bloat
-        assert "fix_code" not in item
         assert "vulnerable_code" not in item
 
     # Verify findings are strictly ordered by file_path

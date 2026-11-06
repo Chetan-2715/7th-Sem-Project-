@@ -421,7 +421,8 @@ async def get_ordered_audit_summary(audit_id: str):
             "function": func,
             "line_range": line_range,
             "vulnerability": vuln,
-            "severity": getattr(f, "severity", "Medium")
+            "severity": getattr(f, "severity", "Medium"),
+            "replacement_code": getattr(f, "fix_code", "") or getattr(f, "replacement_code", "") or ""
         })
 
     return {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Download, Printer, Code, Network, Clock, FileText } from 'lucide-react';
 
-export default function MetricCards({ report, onExportJson, onDownloadReport }) {
+export default function MetricCards({ report, onExportJson, onDownloadReport, onDownloadPdf }) {
   const summary = report?.summary || {};
   const totalFindings = report?.findings?.length || 0;
   const totalFiles = report?.total_files || 0;
@@ -75,11 +75,12 @@ export default function MetricCards({ report, onExportJson, onDownloadReport }) 
             Export JSON
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={onDownloadPdf}
             className="bg-[#21262D] hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded border border-gray-700 flex items-center gap-1.5 transition active:scale-95"
+            title="Download clean, formatted PDF report"
           >
-            <Printer className="w-3.5 h-3.5 text-gray-400" />
-            Print / PDF
+            <Printer className="w-3.5 h-3.5 text-rose-400" />
+            Download PDF
           </button>
         </div>
       </div>

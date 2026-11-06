@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { jsPDF } from 'jspdf';
 import Header from './components/Header';
 import AuditInput from './components/AuditInput';
 import ProgressBar from './components/ProgressBar';
@@ -130,7 +131,7 @@ export default function App() {
   };
 
   // Helper to extract cleanly ordered vulnerability findings (sorted by file_path, then line_start)
-  // Stripped of heavy AST graphs, replaceable code diffs, and rationale bloat.
+  // Stripped of heavy AST graphs and rationale bloat, while preserving actionable replacement code.
   const getOrderedReportFindings = (findings = []) => {
     return [...findings]
       .sort((a, b) => {
@@ -156,6 +157,7 @@ export default function App() {
           line_range: lineRange,
           vulnerability: vulnName,
           severity: f.severity || 'Medium',
+          replacement_code: f.fix_code || f.replacement_code || '',
         };
       });
   };
@@ -175,6 +177,7 @@ export default function App() {
     content += `Target Project : ${repoTitle}\n`;
     content += `Scanned At     : ${timestamp}\n`;
     content += `Total Findings : ${ordered.length}\n`;
+    content += `Health Score   : ${report.health_score ?? 0}/100\n`;
     content += `================================================================================\n\n`;
     content += `ORDERED VULNERABILITY FINDINGS:\n`;
     content += `--------------------------------------------------------------------------------\n`;
@@ -188,6 +191,16 @@ export default function App() {
         content += `    Line Range    : ${item.line_range}\n`;
         content += `    Vulnerability : ${item.vulnerability}\n`;
         content += `    Severity      : ${item.severity}\n`;
+        if (item.replacement_code && item.replacement_code.trim()) {
+          content += `    Replacement Code:\n`;
+          content += `    --------------------------------------------------\n`;
+          item.replacement_code.trim().replace(/\t/g, '    ').split('\n').forEach((line) => {
+            content += `    ${line}\n`;
+          });
+          content += `    --------------------------------------------------\n`;
+        } else {
+          content += `    Replacement Code: [None provided]\n`;
+        }
       });
     }
 
@@ -214,6 +227,7 @@ export default function App() {
       project: report.repo_name || 'Codebase Audit',
       audit_id: report.audit_id || 'result',
       scanned_at: report.scanned_at || new Date().toISOString(),
+      health_score: report.health_score ?? null,
       total_findings: ordered.length,
       findings: ordered,
     };
@@ -226,6 +240,204 @@ export default function App() {
     a.download = `vulnerability-report-${report.repo_name || 'audit'}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Download Clean, Ordered PDF Report (.pdf) formatted like the text report
+  const handleDownloadPdf = () => {
+    if (!report) return;
+    const ordered = getOrderedReportFindings(report.findings || []);
+    const repoTitle = report.repo_name || 'Codebase';
+    const timestamp = report.scanned_at
+      ? new Date(report.scanned_at).toLocaleString()
+      : new Date().toLocaleString();
+
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margin = 14;
+    const contentWidth = pageWidth - margin * 2;
+    let y = margin;
+
+    const checkPageBreak = (neededHeight) => {
+      if (y + neededHeight > pageHeight - margin - 10) {
+        doc.addPage();
+        y = margin + 2;
+        return true;
+      }
+      return false;
+    };
+
+    // 1. Header Banner
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(20, 24, 33);
+    doc.text('CODEBASE VULNERABILITY AUDIT REPORT', margin, y + 4);
+    y += 10;
+
+    doc.setDrawColor(200, 205, 215);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 5;
+
+    // 2. Metadata Block
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(70, 80, 95);
+
+    const leftMeta = [
+      `Target Project : ${repoTitle}`,
+      `Scanned At     : ${timestamp}`,
+    ];
+    const rightMeta = [
+      `Total Findings : ${ordered.length}`,
+      `Health Score   : ${report.health_score ?? 0}/100`,
+    ];
+
+    leftMeta.forEach((line, i) => {
+      doc.text(line, margin, y + i * 4.5);
+    });
+    rightMeta.forEach((line, i) => {
+      doc.text(line, margin + 110, y + i * 4.5);
+    });
+    y += 12;
+
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 8;
+
+    // 3. Findings Section Header
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(30, 41, 59);
+    doc.text('ORDERED VULNERABILITY FINDINGS & REPLACEMENT CODE', margin, y);
+    y += 6;
+
+    if (ordered.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9.5);
+      doc.setTextColor(22, 101, 52);
+      doc.text('No vulnerabilities detected. Codebase is clean.', margin, y + 4);
+      y += 12;
+    } else {
+      ordered.forEach((item, idx) => {
+        checkPageBreak(32);
+
+        // Finding Card Header
+        doc.setFillColor(245, 247, 250);
+        doc.setDrawColor(220, 226, 235);
+        doc.rect(margin, y, contentWidth, 7, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        const title = `[${idx + 1}] ${item.vulnerability}`;
+        const maxTitleWidth = contentWidth - 35;
+        const displayTitle = doc.getTextWidth(title) > maxTitleWidth
+          ? title.substring(0, Math.floor(title.length * (maxTitleWidth / doc.getTextWidth(title)))) + '...'
+          : title;
+        doc.text(displayTitle, margin + 3, y + 4.8);
+
+        // Severity Badge
+        const sev = (item.severity || 'Medium').toUpperCase();
+        if (sev === 'CRITICAL') doc.setTextColor(185, 28, 28);
+        else if (sev === 'HIGH') doc.setTextColor(194, 65, 12);
+        else if (sev === 'MEDIUM') doc.setTextColor(161, 98, 7);
+        else doc.setTextColor(21, 128, 61);
+        doc.text(`[${sev}]`, margin + contentWidth - 25, y + 4.8);
+        y += 10;
+
+        // Metadata Details
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(51, 65, 85);
+
+        doc.text(`File Path   : ${item.file_path}`, margin + 2, y);
+        y += 4;
+        doc.text(`Function    : ${item.function}`, margin + 2, y);
+        y += 4;
+        doc.text(`Line Range  : ${item.line_range}`, margin + 2, y);
+        y += 5;
+
+        // Replacement Code Block
+        const code = item.replacement_code;
+        if (code && code.trim()) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(71, 85, 105);
+          doc.text('Replacement Code Patch:', margin + 2, y);
+          y += 3.5;
+
+          const rawLines = code.trim().replace(/\t/g, '    ').split('\n');
+          const formattedLines = [];
+          rawLines.forEach((l) => {
+            const wrapped = doc.splitTextToSize(l, contentWidth - 8);
+            formattedLines.push(...wrapped);
+          });
+
+          const lineHeight = 3.6;
+          let currentLineIdx = 0;
+          while (currentLineIdx < formattedLines.length) {
+            checkPageBreak(12);
+
+            const availableHeight = pageHeight - margin - 15 - y;
+            const linesCanFit = Math.max(2, Math.floor((availableHeight - 4) / lineHeight));
+            const chunk = formattedLines.slice(currentLineIdx, currentLineIdx + linesCanFit);
+            const chunkHeight = chunk.length * lineHeight + 4;
+
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(226, 232, 240);
+            doc.rect(margin, y, contentWidth, chunkHeight, 'FD');
+
+            doc.setFont('courier', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor(30, 41, 59);
+
+            chunk.forEach((cl, ci) => {
+              doc.text(cl, margin + 4, y + 3.5 + ci * lineHeight);
+            });
+
+            y += chunkHeight + 4;
+            currentLineIdx += chunk.length;
+          }
+        } else {
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184);
+          doc.text('Replacement Code: [None provided]', margin + 2, y);
+          y += 5;
+        }
+
+        y += 3;
+        doc.setDrawColor(235, 238, 243);
+        doc.line(margin, y, margin + contentWidth, y);
+        y += 5;
+      });
+    }
+
+    // Footer on all pages
+    const totalPages = doc.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        'Codebase Architecture & Risk Auditor • Confidential Audit Report',
+        margin,
+        pageHeight - 8
+      );
+      doc.text(
+        `Page ${p} of ${totalPages}`,
+        pageWidth - margin - 18,
+        pageHeight - 8
+      );
+    }
+
+    doc.save(`vulnerability-report-${report.repo_name || 'audit'}.pdf`);
   };
 
   return (
@@ -263,6 +475,7 @@ export default function App() {
                   report={report}
                   onExportJson={handleExportJson}
                   onDownloadReport={handleDownloadReport}
+                  onDownloadPdf={handleDownloadPdf}
                 />
               </div>
             </section>
